@@ -16,7 +16,11 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   approval prompts = waiting) and published as the tab title via tmux `set-titles`, so Orca's own
   working/waiting/done indicators apply. Completion also posts a notification.
 - **"+" in a window's workspace** opens a new tmux window in that session and folder; a new
-  workspace added to a session's group becomes a new tmux window there too.
+  workspace added to a session's group becomes a new tmux window there too. Name it
+  `claude <name>` / `codex <name>` and the window starts that agent (`agentCommands`) and is named
+  `<name>`.
+- **A group added in Orca** as `<host> · <name>` (e.g. `local · api`) becomes a new tmux session.
+  Removing a group never kills a session.
 - **Closing a tab** kills its pane (agent tab) or window (window tab); **removing a window's
   workspace** kills the window. Only when exactly one disappears while another tab of the same
   session is still open — bulk disappearance (workspace slept, Orca restarting) never kills. A kept
@@ -56,7 +60,8 @@ Plugin Development. `⌘⌥⇧T` sync now, `⌘⌥⇧N` new window in the focuse
   "intervalSec": 5,
   "notify": true,
   "closeTabKillsWindow": true,
-  "gitCards": true
+  "gitCards": true,
+  "agentCommands": { "claude": "claude", "codex": "codex" }
 }
 ```
 

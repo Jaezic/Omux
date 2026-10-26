@@ -22,6 +22,9 @@ function fakeOrca() {
           orca.groups.push(group)
           return { group }
         }
+        case 'projectGroup.update':
+          Object.assign(orca.groups.find((g) => g.id === params.groupId) ?? {}, params.updates)
+          return {}
         case 'projectGroup.delete':
           orca.groups = orca.groups.filter((g) => g.id !== params.groupId)
           return {}
@@ -103,15 +106,23 @@ function fakeTmux(orca) {
     },
     { id: '@2', index: 2, name: 'shell', path: '/tmp', panes: [{ id: '%3', index: 1, agent: null, state: null, title: 'zsh' }] }
   ]
+  tmux.extraSessions = [] // sessions created through new-session
   tmux.scan = async (host) => ({
     host,
     home: '/home/me',
     views: orca.views,
-    sessions: [{ name: '0', windows: structuredClone(tmux.windows) }]
+    sessions: [{ name: '0', windows: structuredClone(tmux.windows) }, ...structuredClone(tmux.extraSessions)]
   })
   tmux.nested = [] // "<window folder>\t<changed repo>" lines the nested scan reports
   tmux.run = async (_host, script) => {
     tmux.commands.push(script)
+    const created = script.match(/new-session -d -s '([^']+)'/)
+    if (created) {
+      tmux.extraSessions.push({
+        name: created[1],
+        windows: [{ id: '@50', index: 1, name: 'zsh', path: '/home/me', panes: [{ id: '%50', index: 1, agent: null, state: null, title: 'zsh' }] }]
+      })
+    }
     if (script.includes('-name .git -print')) {
       return tmux.nested.join('\n') + '\n'
     }
@@ -386,4 +397,41 @@ test('a nested card the user removed is not added back', async () => {
   await settle()
   assert.equal(nestedCard(), undefined)
   assert.deepEqual(tmux.kills(), [], 'removing a nested card never touches tmux')
+})
+
+// --- creating from Orca ----------------------------------------------------------------------
+
+test('a group added in Orca as "local · <name>" becomes a tmux session, kept as its group', async () => {
+  const group = { id: 'user-group', name: 'local · api: v2', parentPath: '/src', createdAt: Date.now() }
+  orca.groups.push(group)
+  await engine.tick()
+  assert.ok(tmux.commands.some((c) => c.includes(`new-session -d -s 'api_ v2' -c '/src'`)), 'tmux-safe session name')
+  assert.equal(group.name, 'local · api_ v2', 'the group is renamed to the real session name')
+  await settle()
+  assert.ok(orca.groups.some((g) => g.id === 'user-group'), 'the group is kept, not treated as a leftover')
+  assert.ok(orca.workspaces.some((f) => f.projectGroupId === 'user-group'), 'and gets the new session\'s window')
+})
+
+test('an old untracked group named like ours is still cleaned up as a leftover', async () => {
+  orca.groups.push({ id: 'stale', name: 'local · gone', parentPath: '/x', createdAt: Date.now() - 600_000 })
+  await engine.tick()
+  assert.ok(!orca.groups.some((g) => g.id === 'stale'))
+  assert.ok(!tmux.commands.some((c) => c.includes('new-session')))
+})
+
+test('a workspace added as "claude <name>" opens a window running claude, named <name>', async () => {
+  const group = orca.groups[0].id
+  orca.workspaces.push({ id: 'ws-claude', projectGroupId: group, name: 'claude fix login', folderPath: '/repo/web', createdAt: Date.now() })
+  await engine.tick()
+  const cmd = tmux.commands.find((c) => c.includes('send-keys'))
+  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id}' -c '/repo/web'`)))
+  assert.match(cmd, /send-keys -t '@99' -l 'claude'/)
+  assert.match(cmd, /rename-window -t '@99' 'fix login'/)
+})
+
+test('a plain workspace name opens a plain shell window', async () => {
+  orca.workspaces.push({ id: 'ws-plain', projectGroupId: orca.groups[0].id, name: 'notes', folderPath: '/notes', createdAt: Date.now() })
+  await engine.tick()
+  assert.ok(tmux.commands.some((c) => c.includes('new-window')))
+  assert.ok(!tmux.commands.some((c) => c.includes('send-keys')))
 })
