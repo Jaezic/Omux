@@ -76,7 +76,7 @@ function fakeOrca() {
         case 'terminal.rename':
           return {}
         case 'ui.get':
-          return { workspaceStatuses: orca.lanes }
+          return { ui: { workspaceStatuses: orca.lanes } }
         default:
           throw new Error(`unexpected ${method}`)
       }
