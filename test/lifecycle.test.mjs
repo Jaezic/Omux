@@ -201,3 +201,37 @@ test('a stale untracked workspace is cleaned up, a fresh one becomes one new win
   assert.ok(!orca.workspaces.some((f) => f.id === 'old'), 'debris removed')
   assert.equal(tmux.commands.filter((c) => c.includes('new-window')).length, 1, 'at most one adoption per pass')
 })
+
+// The user removes a window's workspace in Orca: the workspace and its tabs go away.
+function userRemovesWorkspace(name) {
+  const fw = orca.workspaces.find((f) => f.name === name)
+  orca.workspaces = orca.workspaces.filter((f) => f !== fw)
+  for (const t of orca.terminals.filter((t) => t.worktreeId === `folder:${fw.id}`)) {
+    orca.terminals = orca.terminals.filter((x) => x !== t)
+  }
+  for (const v of orca.views.keys()) {
+    if ((name === '1 work' && /^orca-p[12]$/.test(v)) || (name === '2 shell' && v === 'orca-w2')) {
+      orca.views.set(v, { attached: false })
+    }
+  }
+}
+
+test('removing a workspace kills its tmux window', async () => {
+  await settle()
+  userRemovesWorkspace('1 work')
+  await settle()
+  assert.deepEqual(tmux.kills(), [`tmux kill-window -t '@1'`])
+})
+
+test('removing every workspace at once kills nothing and does not bring them back', async () => {
+  await settle()
+  userRemovesWorkspace('1 work')
+  userRemovesWorkspace('2 shell')
+  await settle()
+  await settle()
+  assert.deepEqual(tmux.kills(), [])
+  assert.equal(orca.workspaces.length, 0, 'kept windows stay without a workspace')
+  engine.reopenDismissed()
+  await settle()
+  assert.equal(orca.workspaces.length, 2, '"Reopen Closed Windows" brings them back')
+})
