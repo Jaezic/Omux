@@ -10,7 +10,7 @@ process.env.ORCA_TMUX_HOME = mkdtempSync(join(tmpdir(), 'omux-test-'))
 const { createSyncEngine } = await import('../lib/sync.mjs')
 
 function fakeOrca() {
-  const orca = { groups: [], workspaces: [], terminals: [], repos: [], meta: new Map(), seq: 0, runtimeId: 'run-1', views: new Map() }
+  const orca = { groups: [], workspaces: [], terminals: [], repos: [], meta: new Map(), seq: 0, runtimeId: 'run-1', views: new Map(), lanes: [{ id: 'todo', label: 'Todo' }] }
   const id = (p) => `${p}-${++orca.seq}`
   orca.bridge = {
     async call(_env, method, params) {
@@ -75,6 +75,8 @@ function fakeOrca() {
           return {}
         case 'terminal.rename':
           return {}
+        case 'ui.get':
+          return { workspaceStatuses: orca.lanes }
         default:
           throw new Error(`unexpected ${method}`)
       }
@@ -107,8 +109,12 @@ function fakeTmux(orca) {
     views: orca.views,
     sessions: [{ name: '0', windows: structuredClone(tmux.windows) }]
   })
+  tmux.nested = [] // "<window folder>\t<changed repo>" lines the nested scan reports
   tmux.run = async (_host, script) => {
     tmux.commands.push(script)
+    if (script.includes('-name .git -print')) {
+      return tmux.nested.join('\n') + '\n'
+    }
     return script.includes('new-window') ? '@99\n' : ''
   }
   tmux.kills = () => tmux.commands.filter((c) => /kill-(window|pane)/.test(c))
@@ -323,4 +329,61 @@ test('cd out of a repo moves the window to a folder workspace and drops the unus
   mock.timers.tick(121_000)
   await engine.tick()
   assert.equal(orca.repos.length, 0, 'the card this tool added is unregistered once unused')
+})
+
+// --- changed repos nested in a non-git window's folder -----------------------------------
+
+const nestedCard = () => orca.repos.find((r) => r.path === '/repo/va-vault')
+const withLane = () => orca.lanes.push({ id: 'repos-lane', label: '저장소' })
+
+test('a changed repo inside a window folder gets a card in the 저장소 lane, without tabs', async () => {
+  withLane()
+  tmux.nested = ['/repo\t/repo/va-vault']
+  mock.timers.tick(61_000)
+  await settle()
+  const repo = nestedCard()
+  assert.ok(repo, 'card added')
+  assert.equal(repo.projectGroupId, orca.groups[0].id)
+  const meta = orca.meta.get(`${repo.id}::/repo/va-vault`)
+  assert.equal(meta.workspaceStatus, 'repos-lane')
+  assert.equal(meta.displayName, 'work/va-vault')
+  assert.equal(orca.terminals.filter((t) => t.worktreeId.startsWith(repo.id)).length, 0, 'no agent tabs on it')
+  await settle()
+  assert.equal(orca.repos.filter((r) => r.path === '/repo/va-vault').length, 1, 'not added twice')
+  assert.deepEqual(tmux.kills(), [])
+})
+
+test('without a 저장소 lane, no nested cards are added', async () => {
+  tmux.nested = ['/repo\t/repo/va-vault']
+  mock.timers.tick(61_000)
+  await settle()
+  assert.equal(nestedCard(), undefined)
+})
+
+test('a nested card leaves 10 minutes after its repo is clean again', async () => {
+  withLane()
+  tmux.nested = ['/repo\t/repo/va-vault']
+  mock.timers.tick(61_000)
+  await settle()
+  assert.ok(nestedCard())
+  tmux.nested = []
+  mock.timers.tick(61_000)
+  await settle()
+  assert.ok(nestedCard(), 'kept during the grace period')
+  mock.timers.tick(600_000)
+  await settle()
+  assert.equal(nestedCard(), undefined)
+})
+
+test('a nested card the user removed is not added back', async () => {
+  withLane()
+  tmux.nested = ['/repo\t/repo/va-vault']
+  mock.timers.tick(61_000)
+  await settle()
+  orca.repos = orca.repos.filter((r) => r.path !== '/repo/va-vault')
+  mock.timers.tick(61_000)
+  await settle()
+  await settle()
+  assert.equal(nestedCard(), undefined)
+  assert.deepEqual(tmux.kills(), [], 'removing a nested card never touches tmux')
 })
