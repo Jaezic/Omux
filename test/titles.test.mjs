@@ -23,6 +23,7 @@ test('orcaTitle uses the markers Orca reads as working / idle / waiting', () => 
   assert.match(orcaTitle({ agent: 'claude', state: 'working', title: '✳ fix bug' }), /^⠋ claude · fix bug$/)
   assert.match(orcaTitle({ agent: 'claude', state: 'idle', title: '✳ fix bug' }), /^✳ claude · fix bug/)
   assert.match(orcaTitle({ agent: 'codex', state: 'waiting', title: 'deploy' }), /^codex - action required · deploy$/)
+  assert.equal(orcaTitle({ agent: 'claude', state: 'waiting', title: '✳ fix', ask: 'npm publish' }), 'claude - action required · npm publish · fix')
   assert.doesNotMatch(orcaTitle({ agent: 'codex', state: 'idle', title: 'x' }), /^✳/, 'only claude idle uses ✳')
 })
 
