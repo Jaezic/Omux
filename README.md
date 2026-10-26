@@ -15,8 +15,10 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   working/waiting/done indicators apply. Completion also posts a notification.
 - **"+" in a window's workspace** opens a new tmux window in that session and folder; a new
   workspace added to a session's group becomes a new tmux window there too.
-- **Closing a tab** (or deleting the window's workspace) kills its tmux window — only when exactly
-  one disappears while another tab of the same session is still open. Bulk disappearance (workspace slept, Orca restarting) never kills.
+- **Closing a tab** kills its pane (agent tab) or window (window tab); **removing a window's
+  workspace** kills the window. Only when exactly one disappears while another tab of the same
+  session is still open — bulk disappearance (workspace slept, Orca restarting) never kills. A kept
+  window's workspace is not recreated until "tmux: Reopen Closed Windows".
 - **Detach / ssh drop** reopens the tab; the window is kept.
 - **Hosts**: local plus SSH hosts connected in Orca (`"hosts": "orca"`) that have an orcad server.
   Scanning and tmux commands use system `ssh`; when it can't log in, a "<host> 로그인" tab asks for
