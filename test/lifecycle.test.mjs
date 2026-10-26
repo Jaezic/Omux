@@ -10,7 +10,7 @@ process.env.ORCA_TMUX_HOME = mkdtempSync(join(tmpdir(), 'omux-test-'))
 const { createSyncEngine } = await import('../lib/sync.mjs')
 
 function fakeOrca() {
-  const orca = { groups: [], workspaces: [], terminals: [], seq: 0, runtimeId: 'run-1', views: new Map() }
+  const orca = { groups: [], workspaces: [], terminals: [], repos: [], meta: new Map(), seq: 0, runtimeId: 'run-1', views: new Map() }
   const id = (p) => `${p}-${++orca.seq}`
   orca.bridge = {
     async call(_env, method, params) {
@@ -40,9 +40,30 @@ function fakeOrca() {
           return {}
         case 'terminal.list':
           return { terminals: orca.terminals }
+        case 'repo.list':
+          return { repos: orca.repos }
+        case 'repo.add': {
+          const repo = { id: id('repo'), path: params.path, kind: params.kind, projectGroupId: null }
+          orca.repos.push(repo)
+          return { repo }
+        }
+        case 'repo.rm':
+          orca.repos = orca.repos.filter((r) => `id:${r.id}` !== params.repo)
+          return {}
+        case 'projectGroup.moveProject':
+          orca.repos.find((r) => `id:${r.id}` === params.repo).projectGroupId = params.groupId
+          return {}
+        case 'worktree.list':
+          return { worktrees: orca.repos.map((r) => ({ id: `${r.id}::${r.path}`, path: r.path, ...orca.meta.get(`${r.id}::${r.path}`) })) }
+        case 'worktree.set': {
+          const { worktree, ...updates } = params
+          const key = worktree.replace(/^id:/, '')
+          orca.meta.set(key, { ...orca.meta.get(key), ...updates })
+          return {}
+        }
         case 'terminal.create': {
           const handle = id('term')
-          orca.terminals.push({ handle, worktreeId: params.worktree, title: params.title })
+          orca.terminals.push({ handle, worktreeId: params.worktree.replace(/^id:/, ''), title: params.title })
           // The attach command ends with: _ '<session>' '<window>' '<pane>'
           const [, , windowId, paneId] = params.command.match(/_ '([^']*)' '([^']*)' '([^']*)'$/)
           orca.views.set(paneId ? `orca-p${paneId.slice(1)}` : `orca-w${windowId.slice(1)}`, { attached: true })
@@ -53,8 +74,7 @@ function fakeOrca() {
           orca.terminals = orca.terminals.filter((t) => t.handle !== params.terminal)
           return {}
         case 'terminal.rename':
-        case 'repo.list':
-          return { repos: [] }
+          return {}
         default:
           throw new Error(`unexpected ${method}`)
       }
@@ -234,4 +254,73 @@ test('removing every workspace at once kills nothing and does not bring them bac
   engine.reopenDismissed()
   await settle()
   assert.equal(orca.workspaces.length, 2, '"Reopen Closed Windows" brings them back')
+})
+
+// --- git project cards (window folder inside a repo, like VS Code) --------------------------
+
+function gitWindows() {
+  tmux.windows = [
+    { id: '@1', index: 1, name: 'api', path: '/src/app/api', gitRoot: '/src/app', panes: [{ id: '%1', index: 1, agent: 'claude', state: 'idle', title: '✳ a' }] },
+    { id: '@2', index: 2, name: 'web', path: '/src/app/web', gitRoot: '/src/app', panes: [{ id: '%2', index: 1, agent: 'codex', state: 'idle', title: 'b' }] },
+    { id: '@3', index: 3, name: 'notes', path: '/notes', gitRoot: null, panes: [{ id: '%3', index: 1, agent: null, state: null, title: 'zsh' }] }
+  ]
+}
+
+test('a window inside a git repo gets the repo as a git card in its session group', async () => {
+  gitWindows()
+  await settle()
+  assert.equal(orca.repos.length, 1, 'one card for the shared repo')
+  assert.equal(orca.repos[0].path, '/src/app')
+  assert.equal(orca.repos[0].projectGroupId, orca.groups[0].id)
+  assert.deepEqual(orca.workspaces.map((f) => f.name), ['3 notes'], 'non-git window keeps a folder workspace')
+  const onRepo = orca.terminals.filter((t) => t.worktreeId === `${orca.repos[0].id}::/src/app`)
+  assert.equal(onRepo.length, 2, 'both windows\' agent tabs live on the shared card')
+  assert.equal(orca.meta.get(`${orca.repos[0].id}::/src/app`).displayName, 'app', 'a shared card shows the repo name')
+})
+
+test('tabs of two windows on one git card are never mistaken for "+" tabs', async () => {
+  gitWindows()
+  await settle()
+  await settle()
+  await settle()
+  assert.equal(tmux.commands.filter((c) => c.includes('new-window')).length, 0)
+  assert.deepEqual(tmux.kills(), [])
+})
+
+test('Orca\'s default shell in a just-added git card is closed, not turned into a window', async () => {
+  gitWindows()
+  await engine.tick()
+  const card = `${orca.repos[0].id}::/src/app`
+  orca.terminals.push({ handle: 'default-shell', worktreeId: card, title: 'Terminal 1' })
+  await settle()
+  assert.ok(!orca.terminals.some((t) => t.handle === 'default-shell'))
+  assert.equal(tmux.commands.filter((c) => c.includes('new-window')).length, 0)
+})
+
+test('removing a git card used by one window kills that window', async () => {
+  tmux.windows[0].gitRoot = '/repo' // "1 work" is in a repo, "2 shell" is not
+  await settle()
+  await settle()
+  const repo = orca.repos[0]
+  orca.repos = []
+  orca.terminals = orca.terminals.filter((t) => !t.worktreeId.startsWith(repo.id))
+  orca.views.set('orca-p1', { attached: false })
+  orca.views.set('orca-p2', { attached: false })
+  await settle()
+  assert.deepEqual(tmux.kills(), [`tmux kill-window -t '@1'`])
+})
+
+test('cd out of a repo moves the window to a folder workspace and drops the unused git card', async () => {
+  tmux.windows[0].gitRoot = '/repo'
+  await settle()
+  assert.equal(orca.repos.length, 1)
+  tmux.windows[0].gitRoot = null
+  tmux.windows[0].path = '/elsewhere'
+  await settle()
+  await settle()
+  assert.deepEqual(tmux.kills(), [], 'moving cards never kills')
+  assert.ok(orca.workspaces.some((f) => f.name === '1 work' && f.folderPath === '/elsewhere'))
+  mock.timers.tick(121_000)
+  await engine.tick()
+  assert.equal(orca.repos.length, 0, 'the card this tool added is unregistered once unused')
 })

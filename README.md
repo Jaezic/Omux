@@ -2,12 +2,14 @@
 
 Mirror tmux into Orca's sidebar instead of using Orca worktrees.
 
-- **Layout**: each tmux session is an Orca project group (`local · 0`, `myhost · 0`); each
-  tmux window is a folder workspace in it, named after the window (`3 api`) and pointing at the
-  window's current folder — git or not — so Orca's explorer (and diff for git) shows it. `cd` in
-  the window moves the workspace's folder; the tab stays. Remote hosts use the orcad server Orca
-  runs on them (reached through the CLI's own runtime client), so their workspaces and tabs live
-  on the remote machine like Orca's own and the tabs attach to tmux there directly.
+- **Layout**: each tmux session is an Orca project group (`local · 0`, `myhost · 0`). Each window
+  gets a card in it, like opening its folder in VS Code:
+  - folder inside a **git repo** → the repo as an Orca git project (Source Control, diff, branches,
+    and "Recent" sort work). Windows in the same repo share that card; a card with one window is
+    named after it, a shared one after the repo.
+  - otherwise → a folder workspace named after the window (`3 api`), pointing at its folder.
+  `cd` moves the window to the matching card; tabs follow. Remote hosts use the orcad server Orca
+  runs on them, so their cards and tabs live on the remote machine like Orca's own.
 - **Tabs**: one tab per window, attached through a grouped "view" session (`orca-w<id>`) pinned to
   that window. Splits, keys and new panes are plain tmux.
 - **Status**: the pane bottom is read for claude/codex (`… (12s` / `esc to interrupt` = working,
@@ -53,7 +55,8 @@ Plugin Development. `⌘⌥⇧T` sync now, `⌘⌥⇧N` new window in the focuse
   "exclude": [],
   "intervalSec": 5,
   "notify": true,
-  "closeTabKillsWindow": true
+  "closeTabKillsWindow": true,
+  "gitCards": true
 }
 ```
 
