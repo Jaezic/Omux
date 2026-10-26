@@ -120,6 +120,10 @@ function fakeTmux(orca) {
   tmux.nested = [] // "<window folder>\t<changed repo>" lines the nested scan reports
   tmux.run = async (_host, script) => {
     tmux.commands.push(script)
+    const renamed = script.match(/^tmux rename-window -t '(@\d+)' '([^']*)'$/)
+    if (renamed) {
+      tmux.windows.find((w) => w.id === renamed[1]).name = renamed[2]
+    }
     const created = script.match(/new-session -d -s '([^']+)'/)
     if (created) {
       tmux.extraSessions.push({
@@ -485,4 +489,23 @@ test('Claude or Codex picked in the "+" menu runs in the new tmux window, not in
   plusTab([' ▐▛███▛█   Claude Code v2.1.310'], 'plus2')
   await settle()
   assert.match(tmux.commands.find((c) => c.includes('send-keys')), /-l 'claude'/)
+})
+
+test('renaming a workspace in Orca renames its tmux window', async () => {
+  const fw = orca.workspaces.find((f) => f.name === '2 shell')
+  fw.name = 'notes'
+  await engine.tick()
+  assert.ok(tmux.commands.some((c) => c === `tmux rename-window -t '@2' 'notes'`))
+  assert.equal(fw.name, '2 notes', 'the workspace keeps the index prefix')
+  tmux.commands = []
+  await engine.tick()
+  assert.ok(!tmux.commands.some((c) => c.includes('rename-window')), 'renamed once')
+  assert.equal(fw.name, '2 notes')
+})
+
+test('a rename in tmux updates the workspace without renaming back', async () => {
+  tmux.windows[1].name = 'logs'
+  await engine.tick()
+  assert.ok(!tmux.commands.some((c) => c.includes('rename-window')))
+  assert.equal(orca.workspaces.find((f) => f.folderPath === '/tmp').name, '2 logs')
 })
