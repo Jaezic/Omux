@@ -1,0 +1,74 @@
+{
+  "manifestVersion": 1,
+  "id": "tmux-agents",
+  "publisher": "omux",
+  "name": "Omux",
+  "version": "0.1.0",
+  "description": "Mirror tmux into the Orca sidebar: tmux sessions as groups, windows as folder workspaces, one tab per claude/codex pane with live status.",
+  "engines": {
+    "orca": ">=1.4.200"
+  },
+  "pluginApi": 1,
+  "main": "worker.mjs",
+  "contributes": {
+    "commands": [
+      {
+        "id": "sync-now",
+        "title": "tmux: Sync Sessions Now",
+        "context": "global"
+      },
+      {
+        "id": "new-window",
+        "title": "tmux: New Window in This Session",
+        "context": "worktree"
+      },
+      {
+        "id": "reopen-closed",
+        "title": "tmux: Reopen Closed Windows",
+        "context": "global"
+      },
+      {
+        "id": "pause",
+        "title": "tmux: Pause Syncing",
+        "context": "global"
+      },
+      {
+        "id": "resume",
+        "title": "tmux: Resume Syncing",
+        "context": "global"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "sync-now",
+        "key": "Mod+Alt+Shift+T",
+        "when": "global"
+      },
+      {
+        "command": "new-window",
+        "key": "Mod+Alt+Shift+N",
+        "when": "worktree"
+      }
+    ],
+    "events": [
+      {
+        "on": "agent.status.changed"
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "workspace:read"
+    },
+    {
+      "kind": "notifications:show"
+    },
+    {
+      "kind": "storage"
+    },
+    {
+      "kind": "events:subscribe"
+    }
+  ],
+  "repository": "https://github.com/Jaezic/Omux"
+}

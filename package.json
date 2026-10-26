@@ -1,0 +1,11 @@
+{
+  "name": "omux",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mirror tmux sessions, windows and claude/codex panes into the Orca sidebar",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "watch": "node bin/tmux-agents.mjs watch"
+  },
+  "engines": { "node": ">=21" }
+}
