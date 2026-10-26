@@ -435,3 +435,24 @@ test('a plain workspace name opens a plain shell window', async () => {
   assert.ok(tmux.commands.some((c) => c.includes('new-window')))
   assert.ok(!tmux.commands.some((c) => c.includes('send-keys')))
 })
+
+test('a workspace created with an agent picked in Orca runs it in tmux and closes Orca\'s agent tab', async () => {
+  orca.workspaces.push({ id: 'ws-pick', projectGroupId: orca.groups[0].id, name: 'fix login', folderPath: '/notes', createdAt: Date.now(), createdWithAgent: 'codex' })
+  orca.terminals.push({ handle: 'orca-agent', worktreeId: 'folder:ws-pick', title: 'codex' })
+  await engine.tick()
+  const cmd = tmux.commands.find((c) => c.includes('send-keys'))
+  assert.match(cmd, /send-keys -t '@99' -l 'codex'/)
+  assert.match(cmd, /rename-window -t '@99' 'fix login'/)
+  tmux.windows.push({ id: '@99', index: 3, name: 'fix login', path: '/notes', panes: [{ id: '%99', index: 1, agent: 'codex', state: 'idle', title: 'x' }] })
+  await engine.tick()
+  assert.ok(!orca.terminals.some((t) => t.handle === 'orca-agent'), 'the agent runs once, inside tmux')
+  assert.equal(tmux.commands.filter((c) => c.includes('new-window')).length, 1, 'Orca\'s agent tab is not a "+" tab')
+})
+
+test('the dialog\'s default name does not rename the window', async () => {
+  orca.workspaces.push({ id: 'ws-def', projectGroupId: orca.groups[0].id, name: 'local · 0 workspace', folderPath: '/notes', createdAt: Date.now(), createdWithAgent: 'claude' })
+  await engine.tick()
+  const cmd = tmux.commands.find((c) => c.includes('send-keys'))
+  assert.match(cmd, /-l 'claude'/)
+  assert.doesNotMatch(cmd, /rename-window/)
+})
