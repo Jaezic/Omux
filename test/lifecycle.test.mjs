@@ -78,6 +78,10 @@ function fakeOrca() {
           return {}
         case 'terminal.rename':
           return {}
+        case 'terminal.isRunningAgent':
+          return { isRunningAgent: Boolean(orca.terminals.find((t) => t.handle === params.terminal)?.screen) }
+        case 'terminal.read':
+          return { terminal: { tail: orca.terminals.find((t) => t.handle === params.terminal)?.screen ?? [] } }
         case 'ui.get':
           return { ui: { workspaceStatuses: orca.lanes } }
         default:
@@ -443,6 +447,7 @@ test('a workspace created with an agent picked in Orca runs it in tmux and close
   const cmd = tmux.commands.find((c) => c.includes('send-keys'))
   assert.match(cmd, /send-keys -t '@99' -l 'codex'/)
   assert.match(cmd, /rename-window -t '@99' 'fix login'/)
+  assert.ok(cmd.includes(` \\; send-keys -t '@99' Enter \\; rename-window`), 'one shell command: tmux gets the ; itself')
   tmux.windows.push({ id: '@99', index: 3, name: 'fix login', path: '/notes', panes: [{ id: '%99', index: 1, agent: 'codex', state: 'idle', title: 'x' }] })
   await engine.tick()
   assert.ok(!orca.terminals.some((t) => t.handle === 'orca-agent'), 'the agent runs once, inside tmux')
@@ -455,4 +460,29 @@ test('the dialog\'s default name does not rename the window', async () => {
   const cmd = tmux.commands.find((c) => c.includes('send-keys'))
   assert.match(cmd, /-l 'claude'/)
   assert.doesNotMatch(cmd, /rename-window/)
+})
+
+// The user presses "+" in the tab bar of window @2's card: Orca opens a tab there.
+function plusTab(screen, handle = 'plus') {
+  const fw = orca.workspaces.find((f) => f.name.includes('shell'))
+  orca.terminals.push({ handle, worktreeId: `folder:${fw.id}`, title: 'Terminal 9', screen })
+}
+
+test('a plain "+" tab becomes a plain tmux window in that folder', async () => {
+  plusTab(undefined)
+  await settle()
+  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id}' -c '/tmp'`)))
+  assert.ok(!tmux.commands.some((c) => c.includes('send-keys')))
+  assert.ok(!orca.terminals.some((t) => t.handle === 'plus'))
+})
+
+test('Claude or Codex picked in the "+" menu runs in the new tmux window, not in the Orca tab', async () => {
+  plusTab(['  Update available · 0.163.0 → 0.164.0', '  Release notes: https://github.com/openai/codex/releases/latest'])
+  await settle()
+  assert.match(tmux.commands.find((c) => c.includes('send-keys')), /send-keys -t '@99' -l 'codex'/)
+  assert.ok(!orca.terminals.some((t) => t.handle === 'plus'), 'the agent runs once, inside tmux')
+  tmux.commands = []
+  plusTab([' ▐▛███▛█   Claude Code v2.1.310'], 'plus2')
+  await settle()
+  assert.match(tmux.commands.find((c) => c.includes('send-keys')), /-l 'claude'/)
 })

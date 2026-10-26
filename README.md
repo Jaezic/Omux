@@ -15,7 +15,8 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
 - **Status**: the pane bottom is read for claude/codex (`… (12s` / `esc to interrupt` = working,
   approval prompts = waiting) and published as the tab title via tmux `set-titles`, so Orca's own
   working/waiting/done indicators apply. Completion also posts a notification.
-- **"+" in a window's workspace** opens a new tmux window in that session and folder; a new
+- **"+" in a window's workspace** opens a new tmux window in that session and folder (Claude or
+  Codex picked from the "+" menu starts in that window instead of an Orca terminal); a new
   workspace added to a session's group becomes a new tmux window there too, named after the
   workspace. Pick an agent in Orca's dialog and it starts inside that tmux window (`agentCommands`)
   instead of in an Orca terminal. Naming it `claude <name>` / `codex <name>` works too.
