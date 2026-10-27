@@ -31,7 +31,7 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   prefix stays). Renaming in tmux updates the workspace.
 - **Names**: a window tmux names after its command (claude shows up as its version, `2.1.311`)
   is named after its agent's task in Orca (`6 Tag the release`); agent tabs read
-  `✳claude · <task> · 3m`. Names you give windows stay.
+  `3m · <task>` (Orca already shows the agent icon and status). Names you give windows stay.
 - **Renaming a session** in tmux renames its group; renaming the group in Orca (with or without
   the `<host> · ` prefix) renames the session.
 - **"+" on a git card** keeps the new tab where it is: its shell becomes the new window's view.

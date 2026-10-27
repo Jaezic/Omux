@@ -175,7 +175,10 @@ function userCloses(paneOrWindow, handle) {
   orca.terminals = orca.terminals.filter((t) => t.handle !== handle)
   orca.views.set(tabFor(paneOrWindow).view, { attached: false })
 }
-const handleOf = (title) => orca.terminals.find((t) => t.title.includes(title))?.handle
+// Agent tabs are titled by their task: the fake claude pane's is "a", the codex pane's "b".
+const TASK = { claude: 'a', codex: 'b' }
+const handleOf = (name) =>
+  (TASK[name] ? orca.terminals.find((t) => t.title === TASK[name]) : orca.terminals.find((t) => t.title.includes(name)))?.handle
 
 beforeEach(async () => {
   rmSync(join(process.env.ORCA_TMUX_HOME, 'state.json'), { force: true })
@@ -647,4 +650,12 @@ test('a plain "+" tab on a git card stays and becomes the new window\'s tab', as
   const created = orca.calls.filter((m) => m === 'terminal.create').length
   await settle()
   assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, created, 'no second tab for it')
+})
+
+test('agent tabs read "<idle age> · <task>", without agent name or state glyph', async () => {
+  assert.deepEqual(orca.terminals.map((t) => t.title).filter((t) => !/^\d /.test(t)).sort(), ['a', 'b'])
+  mock.timers.tick(3 * 60_000)
+  await engine.tick()
+  const renames = orca.calls.filter((m) => m === 'terminal.rename').length
+  assert.ok(renames > 0, 'titles follow the idle age')
 })
