@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 process.env.ORCA_TMUX_HOME = mkdtempSync(join(tmpdir(), 'omux-test-'))
 const { attachCommand } = await import('../lib/attach-command.mjs')
-const { agentStatusPayload, agentTask, cardName, idleAge, orcaTitle, windowTitle } = await import('../lib/sync.mjs')
+const { agentStatusPayload, agentTask, cardName, idleAge, orcaTitle, stateAge, windowTitle } = await import('../lib/sync.mjs')
 
 test('idleAge buckets idle time and stays empty otherwise', () => {
   const now = Date.now()
@@ -77,4 +77,12 @@ test('agentStatusPayload carries the task for Orca notifications and the dashboa
   assert.equal(done.prompt, 'Tag the release')
   assert.equal(done.lastAssistantMessage, 'Tag the release', 'the notification body')
   assert.equal(agentStatusPayload({ agent: 'claude', state: 'working', since: 5, title: '✳ Claude Code' }).prompt, undefined)
+})
+
+test('stateAge counts working and waiting time too; idleAge only idle time', () => {
+  const now = Date.now()
+  const working = { state: 'working', since: now - 12 * 60_000 }
+  assert.equal(stateAge(working, now), '10m')
+  assert.equal(idleAge(working, now), '')
+  assert.equal(stateAge({ state: 'waiting', since: now - 2 * 60_000 }, now), '2m')
 })
