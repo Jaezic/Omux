@@ -37,10 +37,11 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   window's workspace is not recreated until "tmux: Reopen Closed Windows".
 - **Detach / ssh drop** reopens the tab; the window is kept.
 - **Hosts**: local plus SSH hosts connected in Orca (`"hosts": "orca"`) that have an orcad server.
-  Scanning and tmux commands use system `ssh`; when it can't log in, a "<host> 로그인" tab asks for
-  the password once (ssh reads it from the terminal; nothing stores it) and the login is kept as a
-  shared ssh master (`~/.orca-tmux/.cm`). Closing that tab without logging in pauses prompting for
-  10 minutes.
+  They are reached over Orca's own connection, never a second SSH login: orcad can read and write
+  files there, so a small helper (`~/.orca-tmux/remote`, in a tmux session `omux-relay`) scans tmux
+  and runs the runner's command files. It is started once through a hidden workspace ("Omux relay")
+  and exits when the runner stops writing `alive`. `"viaOrca": false` goes back to system `ssh`, where
+  a "<host> 로그인" tab asks for the password when ssh can't log in.
 
 Everything goes through the `orca` CLI and the CLI's own runtime client (`lib/bridge.cjs`, run on
 Orca's Electron), and nothing lives inside Orca.app, so app updates don't remove it. The runtime
