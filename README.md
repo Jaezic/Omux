@@ -29,6 +29,14 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   `claude - action required · npm publish · …`). Click it and answer in the tab (1 / Esc).
 - **Renaming a window's workspace** in Orca renames the tmux window (folder cards; the index
   prefix stays). Renaming in tmux updates the workspace.
+- **Names**: a window tmux names after its command (claude shows up as its version, `2.1.311`)
+  is named after its agent's task in Orca (`6 Tag the release`); agent tabs read
+  `✳claude · <task> · 3m`. Names you give windows stay.
+- **Renaming a session** in tmux renames its group; renaming the group in Orca (with or without
+  the `<host> · ` prefix) renames the session.
+- **"+" on a git card** keeps the new tab where it is: its shell becomes the new window's view.
+  On a folder card (one window each) the new window gets its own card.
+- **Notifications**: Orca's completion notification names the card and carries the agent's task.
 - **A group added in Orca** as `<host> · <name>` (e.g. `local · api`) becomes a new tmux session.
   Removing a group never kills a session.
 - **Closing a tab** kills its pane (agent tab) or window (window tab); **removing a window's

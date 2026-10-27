@@ -13,6 +13,7 @@ function fakeOrca() {
   const orca = { groups: [], workspaces: [], terminals: [], repos: [], meta: new Map(), seq: 0, runtimeId: 'run-1', views: new Map(), lanes: [{ id: 'todo', label: 'Todo' }] }
   const id = (p) => `${p}-${++orca.seq}`
   orca.calls = []
+  orca.sent = []
   orca.bridge = {
     async call(_env, method, params) {
       orca.calls.push(method)
@@ -80,6 +81,15 @@ function fakeOrca() {
           return {}
         case 'terminal.rename':
           return {}
+        case 'terminal.send': {
+          // Typed into a tab's shell: an attach command makes that tab the window's view.
+          orca.sent.push(params)
+          const [, , windowId, paneId] = params.text.match(/_ '([^']*)' '([^']*)' '([^']*)'$/) ?? []
+          if (windowId) {
+            orca.views.set(paneId ? `orca-p${paneId.slice(1)}` : `orca-w${windowId.slice(1)}`, { attached: true, tty: '/dev/ttys099' })
+          }
+          return {}
+        }
         case 'terminal.isRunningAgent':
           return { isRunningAgent: Boolean(orca.terminals.find((t) => t.handle === params.terminal)?.screen) }
         case 'terminal.read':
@@ -113,15 +123,20 @@ function fakeTmux(orca) {
     { id: '@2', index: 2, name: 'shell', path: '/tmp', panes: [{ id: '%3', index: 1, agent: null, state: null, title: 'zsh' }] }
   ]
   tmux.extraSessions = [] // sessions created through new-session
+  tmux.sessionName = '0'
   tmux.scan = async (host) => ({
     host,
     home: '/home/me',
     views: orca.views,
-    sessions: [{ name: '0', windows: structuredClone(tmux.windows) }, ...structuredClone(tmux.extraSessions)]
+    sessions: [{ name: tmux.sessionName, id: '$0', windows: structuredClone(tmux.windows) }, ...structuredClone(tmux.extraSessions)]
   })
   tmux.nested = [] // "<window folder>\t<changed repo>" lines the nested scan reports
   tmux.run = async (_host, script) => {
     tmux.commands.push(script)
+    const session = script.match(/rename-session -t '=([^']*)' '([^']*)'$/)
+    if (session && session[1] === tmux.sessionName) {
+      tmux.sessionName = session[2]
+    }
     const renamed = script.match(/^tmux rename-window -t '(@\d+)' '([^']*)'$/)
     if (renamed) {
       tmux.windows.find((w) => w.id === renamed[1]).name = renamed[2]
@@ -591,4 +606,45 @@ test('probe notices a tab opened in Orca between passes', async () => {
   assert.equal(await engine.probe(), false, 'nothing new')
   plusTab(undefined, 'probe-me')
   assert.equal(await engine.probe(), true)
+})
+
+// --- session names ---------------------------------------------------------------------------
+
+test('renaming a tmux session renames its group (same group, same cards)', async () => {
+  const group = orca.groups[0].id
+  const cards = orca.workspaces.map((w) => w.id)
+  tmux.sessionName = 'work'
+  await engine.tick()
+  assert.deepEqual(orca.groups.map((g) => [g.id, g.name]), [[group, 'local · work']])
+  assert.deepEqual(orca.workspaces.map((w) => w.id), cards, 'no card was recreated')
+})
+
+test('renaming a group in Orca renames its tmux session', async () => {
+  orca.groups[0].name = 'api' // the "<host> · " prefix may be left out
+  await engine.tick()
+  assert.ok(tmux.commands.some((c) => c.endsWith(`rename-session -t '=0' 'api'`)))
+  assert.equal(tmux.sessionName, 'api')
+  assert.equal(orca.groups[0].name, 'local · api')
+  tmux.commands = []
+  await engine.tick()
+  assert.ok(!tmux.commands.some((c) => c.includes('rename-session')), 'renamed once')
+  assert.equal(orca.groups.length, 1)
+})
+
+test('a plain "+" tab on a git card stays and becomes the new window\'s tab', async () => {
+  gitWindows()
+  await settle()
+  mock.timers.tick(31_000) // past the window where Orca's default shell in a new git card is closed
+  await settle()
+  const card = orca.terminals.find((t) => t.worktreeId.includes('::'))?.worktreeId
+  tmux.commands = []
+  orca.terminals.push({ handle: 'stay', worktreeId: card, title: 'Terminal 3' })
+  await settle()
+  assert.ok(orca.terminals.some((t) => t.handle === 'stay'), 'the tab was not closed')
+  assert.match(orca.sent.find((p) => p.terminal === 'stay')?.text ?? '', /^exec sh -c .* '@99' ''$/)
+  // The new window shows up in tmux; its tab is the one already there.
+  tmux.windows.push({ id: '@99', index: 4, name: 'zsh', path: '/src/app/api', gitRoot: '/src/app', panes: [{ id: '%99', index: 1, agent: null, state: null, title: 'zsh' }] })
+  const created = orca.calls.filter((m) => m === 'terminal.create').length
+  await settle()
+  assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, created, 'no second tab for it')
 })

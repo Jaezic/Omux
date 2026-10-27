@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process'
 import { STATE_AWK, classifyCommand, findOrcaAgentArgs, parseDoneStamp, parseScan, resumeArgs } from '../lib/scan.mjs'
 
 const SEP = '|#|'
-const pane = (session, windowId, index, name, paneId, paneIndex, active, pid, path, title) =>
-  [session, windowId, index, name, paneId, paneIndex, active, pid, path, title].join(SEP)
+const pane = (session, windowId, index, name, paneId, paneIndex, active, pid, path, title, auto = '0') =>
+  [session, windowId, index, name, paneId, paneIndex, active, pid, path, auto, 'myhost', `$${session}`, title].join(SEP)
 
 function scanOutput({ panes, sessions = [], ps = [], cap = [] }) {
   return [
