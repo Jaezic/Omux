@@ -34,8 +34,12 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   `3m · <task>`: time in its current state, idle or working (Orca already shows the agent icon and status). Names you give windows stay.
 - **Renaming a session** in tmux renames its group; renaming the group in Orca (with or without
   the `<host> · ` prefix) renames the session.
-- **"+" on a git card** keeps the new tab where it is: its shell becomes the new window's view.
-  On a folder card (one window each) the new window gets its own card.
+- **"+" in a card** keeps the new tab where it is: a new tmux window opens in the card's folder,
+  joins that card, and the tab's shell becomes its view (anything half-typed is cleared first).
+  Windows on a shared folder card stay on it wherever they `cd`; the card is named after its
+  lowest-numbered window and lists the others in its note.
+- **cd into or out of a git repo** moves a window to that card only after it stayed there a
+  minute, so a quick `cd` while typing never pulls the tab away.
 - **SSH host cards** start with a colored dot per host (🔵 🟣 🟢 …) so hosts tell apart in a status
   lane. Orca refuses tab colors from outside while its window is open, so the dot is on the card.
   `hostColors` picks them (`{ "<host>": "🟢" }`), `hostMarks: false` turns them off.
