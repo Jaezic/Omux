@@ -69,7 +69,7 @@ function fakeOrca() {
           orca.terminals.push({ handle, worktreeId: params.worktree.replace(/^id:/, ''), title: params.title })
           // The attach command ends with: _ '<session>' '<window>' '<pane>'
           const [, , windowId, paneId] = params.command.match(/_ '([^']*)' '([^']*)' '([^']*)'$/)
-          orca.views.set(paneId ? `orca-p${paneId.slice(1)}` : `orca-w${windowId.slice(1)}`, { attached: true })
+          orca.views.set(paneId ? `orca-p${paneId.slice(1)}` : `orca-w${windowId.slice(1)}`, { attached: true, tty: `/dev/ttys0${paneId?.slice(1) ?? 0}` })
           return { terminal: { handle } }
         }
         case 'terminal.closeTab':
@@ -120,12 +120,19 @@ function fakeTmux(orca) {
   tmux.nested = [] // "<window folder>\t<changed repo>" lines the nested scan reports
   tmux.run = async (_host, script) => {
     tmux.commands.push(script)
+    const renamed = script.match(/^tmux rename-window -t '(@\d+)' '([^']*)'$/)
+    if (renamed) {
+      tmux.windows.find((w) => w.id === renamed[1]).name = renamed[2]
+    }
     const created = script.match(/new-session -d -s '([^']+)'/)
     if (created) {
       tmux.extraSessions.push({
         name: created[1],
         windows: [{ id: '@50', index: 1, name: 'zsh', path: '/home/me', panes: [{ id: '%50', index: 1, agent: null, state: null, title: 'zsh' }] }]
       })
+    }
+    if (script.startsWith('ps -eo')) {
+      return tmux.ps ?? ''
     }
     if (script.includes('-name .git -print')) {
       return tmux.nested.join('\n') + '\n'
@@ -485,4 +492,50 @@ test('Claude or Codex picked in the "+" menu runs in the new tmux window, not in
   plusTab([' ▐▛███▛█   Claude Code v2.1.310'], 'plus2')
   await settle()
   assert.match(tmux.commands.find((c) => c.includes('send-keys')), /-l 'claude'/)
+})
+
+test('renaming a workspace in Orca renames its tmux window', async () => {
+  const fw = orca.workspaces.find((f) => f.name === '2 shell')
+  fw.name = 'notes'
+  await engine.tick()
+  assert.ok(tmux.commands.some((c) => c === `tmux rename-window -t '@2' 'notes'`))
+  assert.equal(fw.name, '2 notes', 'the workspace keeps the index prefix')
+  tmux.commands = []
+  await engine.tick()
+  assert.ok(!tmux.commands.some((c) => c.includes('rename-window')), 'renamed once')
+  assert.equal(fw.name, '2 notes')
+})
+
+test('a rename in tmux updates the workspace without renaming back', async () => {
+  tmux.windows[1].name = 'logs'
+  await engine.tick()
+  assert.ok(!tmux.commands.some((c) => c.includes('rename-window')))
+  assert.equal(orca.workspaces.find((f) => f.folderPath === '/tmp').name, '2 logs')
+})
+
+test('each agent tab gets Orca\'s in-band status, resent only on change', async () => {
+  const sends = () => tmux.commands.filter((c) => c.includes(']9999;'))
+  await engine.tick()
+  const first = sends().join('\n')
+  assert.match(first, /"state":"done","agentType":"claude".*> \/dev\/ttys01/)
+  assert.match(first, /"agentType":"codex".*> \/dev\/ttys02/)
+  tmux.commands = []
+  await engine.tick()
+  assert.equal(sends().length, 0, 'unchanged: nothing resent')
+  tmux.windows[0].panes[0].state = 'waiting'
+  tmux.windows[0].panes[0].ask = 'npm publish'
+  await engine.tick()
+  assert.equal(sends().length, 1)
+  assert.match(sends()[0], /"state":"waiting".*"toolName":"Bash","toolInput":"npm publish"/)
+})
+
+test('a conversation Orca resumed in a new tab continues in the tmux window', async () => {
+  tmux.ps = [
+    '10 1 3-00:00:00 /x/Orca Terminal Host.app/Contents/MacOS/Orca Terminal Host',
+    '11 10 00:09 -zsh',
+    '12 11 00:08 claude --resume 0b5d7a2e-1111-4222-8333-944455556666'
+  ].join('\n')
+  plusTab([' ▐▛███▛█   Claude Code v2.1.310'], 'resumed')
+  await settle()
+  assert.match(tmux.commands.find((c) => c.includes('send-keys')), /-l 'claude --resume 0b5d7a2e-1111-4222-8333-944455556666'/)
 })

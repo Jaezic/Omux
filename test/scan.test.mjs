@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { classifyCommand, parseDoneStamp, parseScan } from '../lib/scan.mjs'
+import { execFileSync } from 'node:child_process'
+import { ASK_AWK, classifyCommand, findOrcaAgentArgs, parseDoneStamp, parseScan, resumeArgs } from '../lib/scan.mjs'
 
 const SEP = '|#|'
 const pane = (session, windowId, index, name, paneId, paneIndex, active, pid, path, title) =>
@@ -87,4 +88,50 @@ test('parseDoneStamp reads claude and codex footers relative to now', () => {
   assert.deepEqual([codex.getMonth(), codex.getDate(), codex.getHours(), codex.getMinutes()], [9, 21, 13, 13])
   assert.equal(at('Dec 30 at 1:00 PM').getFullYear(), 2025, 'a future date belongs to last year')
   assert.equal(parseDoneStamp('no clock here', now), null)
+})
+
+test('parseScan keeps what a waiting agent asks to do', () => {
+  const out = scanOutput({
+    panes: [pane('0', '@1', 1, 'w', '%1', 1, 1, 100, '/r', 't'), pane('0', '@1', 1, 'w', '%2', 2, 0, 200, '/r', 't')],
+    ps: ['100 1 -zsh', '101 100 claude', '200 1 -zsh', '201 200 codex'],
+    cap: ['%1 waiting', '%1 @ask touch /tmp/x.txt', '%2 working', '%2 @ask stale']
+  })
+  const [a, b] = parseScan('local', out).sessions[0].windows[0].panes
+  assert.equal(a.ask, 'touch /tmp/x.txt')
+  assert.equal(b.ask, null, 'only while waiting')
+})
+
+test('ASK_AWK finds the command on claude and codex approval screens', () => {
+  const ask = (screen) => execFileSync('awk', [ASK_AWK], { input: screen }).toString().trim()
+  const rule = '╌'.repeat(20)
+  const claude = [' Bash command', ' Create an empty file', rule, ' touch /tmp/a.txt', rule, ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No'].join('\n')
+  const codex = ['  Would you like to run the following command?', '  Reason: needs write access', '  $ touch /tmp/b.txt', '› 1. Yes, proceed (y)'].join('\n')
+  const edit = [' Edit file', ' Do you want to make this edit to app.ts?', ' ❯ 1. Yes'].join('\n')
+  assert.equal(ask(claude), 'touch /tmp/a.txt')
+  assert.equal(ask(codex), 'touch /tmp/b.txt')
+  assert.equal(ask(edit), 'Do you want to make this edit to app.ts?')
+})
+
+test('findOrcaAgentArgs picks the newest agent in an Orca terminal, not one in tmux', () => {
+  const ps = [
+    '10 1 3-00:00:00 /Applications/Orca.app/Contents/Frameworks/Orca Terminal Host.app/Contents/MacOS/Orca Terminal Host',
+    '11 10 00:20 -zsh',
+    '12 11 00:15 claude --resume 0b5d7a2e-1111-4222-8333-944455556666',
+    '20 1 5-00:00:00 tmux new-session -d',
+    '21 20 00:05 -zsh',
+    '22 21 00:03 claude --resume ffffffff-0000-0000-0000-000000000000',
+    '13 11 20:00 claude --continue'
+  ].join('\n')
+  assert.equal(findOrcaAgentArgs(ps, 'claude'), 'claude --resume 0b5d7a2e-1111-4222-8333-944455556666')
+  assert.equal(findOrcaAgentArgs(ps, 'codex'), null)
+})
+
+test('resumeArgs keeps only the resume part of an agent command line', () => {
+  assert.equal(resumeArgs('claude', 'claude --resume 0b5d7a2e-1111 --model x'), '--resume 0b5d7a2e-1111')
+  assert.equal(resumeArgs('claude', '/u/bin/claude -r=abcdef123456'), '--resume abcdef123456')
+  assert.equal(resumeArgs('claude', 'claude --continue'), '--continue')
+  assert.equal(resumeArgs('claude', 'claude fix the login bug'), '')
+  assert.equal(resumeArgs('codex', 'node /opt/homebrew/bin/codex resume 019a2b3c-4d5e'), 'resume 019a2b3c-4d5e')
+  assert.equal(resumeArgs('codex', 'codex resume --last'), 'resume --last')
+  assert.equal(resumeArgs('codex', 'codex'), '')
 })
