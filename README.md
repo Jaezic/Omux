@@ -40,7 +40,7 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   They are reached over Orca's own connection, never a second SSH login: orcad can read and write
   files there, so a small helper (`~/.orca-tmux/remote`, in a tmux session `omux-relay`) scans tmux
   and runs the runner's command files. It is started once through a hidden workspace ("Omux relay")
-  and exits when the runner stops writing `alive`. `"viaOrca": false` goes back to system `ssh`, where
+  and exits when the runner stops writing `alive` for 10 minutes. `"viaOrca": false` goes back to system `ssh`, where
   a "<host> 로그인" tab asks for the password when ssh can't log in.
 
 Everything goes through the `orca` CLI and the CLI's own runtime client (`lib/bridge.cjs`, run on

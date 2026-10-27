@@ -7,19 +7,32 @@ import { createRelay, helperScript } from '../lib/relay.mjs'
 function fakeOrca({ helperRunning = true } = {}) {
   const files = new Map()
   const calls = []
+  const workspaces = []
+  const groups = []
   const rpc = async (_host, method, p) => {
     calls.push(method)
     switch (method) {
       case 'files.browseServerDir':
         return { resolvedPath: '/home/me' }
       case 'folderWorkspace.list':
-        return { folderWorkspaces: [] }
+        return { folderWorkspaces: structuredClone(workspaces) }
       case 'projectGroup.list':
-        return { groups: [] }
+        return { groups: structuredClone(groups) }
       case 'projectGroup.create':
-        return { group: { id: 'g1' } }
+        groups.push({ id: 'g1', name: p.name })
+        return { group: groups.at(-1) }
       case 'folderWorkspace.create':
-        return { folderWorkspace: { id: 'w1' } }
+        workspaces.push({ id: `w${workspaces.length + 1}`, projectGroupId: p.projectGroupId, folderPath: p.folderPath })
+        return { folderWorkspace: workspaces.at(-1) }
+      case 'folderWorkspace.update':
+        Object.assign(workspaces.find((w) => w.id === p.folderWorkspaceId), p.updates)
+        return {}
+      case 'folderWorkspace.delete':
+        workspaces.splice(workspaces.findIndex((w) => w.id === p.folderWorkspaceId), 1)
+        return {}
+      case 'projectGroup.delete':
+        groups.splice(groups.findIndex((g) => g.id === p.groupId), 1)
+        return {}
       case 'files.createDir':
         return {}
       case 'files.write':
@@ -51,7 +64,7 @@ function fakeOrca({ helperRunning = true } = {}) {
         throw new Error(`unexpected ${method}`)
     }
   }
-  return { files, calls, rpc }
+  return { files, calls, rpc, workspaces, groups }
 }
 
 test('exec writes a command file and returns what the helper wrote back', async () => {
@@ -69,7 +82,8 @@ test('scan starts the helper once when there is no scan yet, then reads it', asy
   await assert.rejects(relay.scan('h'), (err) => err.relayStarting === true)
   assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, 1)
   assert.ok(orca.files.get('.orca-tmux/remote/helper.sh').includes('__RC__'))
-  assert.deepEqual(state.relay.h, { group: 'g1', fw: 'w1' })
+  assert.deepEqual(state.relay.h, { group: 'g1', fw: 'w1', own: true })
+  assert.equal(orca.workspaces[0].isArchived, true, 'archived: hidden from the sidebar')
   orca.files.set('.orca-tmux/remote/scan.out', '__HOME__/home/me\n__SESSIONS__\n__PS__\n__CAP__\n__AT__1700000000\n')
   const scan = await relay.scan('h')
   assert.equal(scan.home, '/home/me')
@@ -86,4 +100,32 @@ test('the helper runs queued commands and exits once the runner goes quiet', () 
   const out = execFileSync('cat', [`${dir}/cmd/a.out`, `${dir}/scan.out`]).toString()
   assert.match(out, /^hi\n__RC__0\nscanned\n__AT__\d+\n$/)
   execFileSync('rm', ['-rf', home])
+})
+
+test('the hidden workspace lives in a session group; its own group goes once one exists', async () => {
+  const orca = fakeOrca()
+  const state = {}
+  let session = null
+  const relay = createRelay({ rpc: orca.rpc, state, hostGroup: () => session })
+  await relay.exec('h', 'true')
+  assert.deepEqual(orca.groups.map((g) => g.name), ['Omux relay'], 'no session yet: a group of its own')
+  session = 'sess'
+  orca.groups.push({ id: 'sess', name: 'h · 0' })
+  const fresh = createRelay({ rpc: orca.rpc, state, hostGroup: () => session }) // next run
+  await fresh.exec('h', 'true')
+  assert.deepEqual(orca.groups.map((g) => g.id), ['sess'], 'the relay group is gone')
+  assert.deepEqual(orca.workspaces.map((w) => [w.projectGroupId, w.isArchived]), [['sess', true]])
+  assert.equal(state.relay.h.own, false)
+})
+
+test('a helper from an older version is replaced once per run', async () => {
+  const orca = fakeOrca()
+  const relay = createRelay({ rpc: orca.rpc, state: {} })
+  await assert.rejects(relay.scan('h'), (err) => err.relayStarting)
+  orca.files.set('.orca-tmux/remote/scan.out', '__HOME__/home/me\n__AT__1\n')
+  orca.files.set('.orca-tmux/remote/helper.sh', 'old helper')
+  const next = createRelay({ rpc: orca.rpc, state: {} })
+  await assert.rejects(next.scan('h'), /updating/)
+  assert.notEqual(orca.files.get('.orca-tmux/remote/helper.sh'), 'old helper')
+  assert.equal((await next.scan('h')).home, '/home/me')
 })
