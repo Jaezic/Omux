@@ -34,10 +34,9 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   `3m · <task>`: time in its current state, idle or working (Orca already shows the agent icon and status). Names you give windows stay.
 - **Renaming a session** in tmux renames its group; renaming the group in Orca (with or without
   the `<host> · ` prefix) renames the session.
-- **"+" in a card** keeps the new tab where it is: a new tmux window opens in the card's folder,
-  joins that card, and the tab's shell becomes its view (anything half-typed is cleared first).
-  Windows on a shared folder card stay on it wherever they `cd`; the card is named after its
-  lowest-numbered window and lists the others in its note.
+- **"+" in a card** opens a new tmux window in the card's folder at once, with a card of its own
+  (or on the same git card), and its tab gets focus. The "+" tab closes by itself shortly after;
+  a Claude/Codex picked in the "+" menu is started in the new window instead.
 - **cd into or out of a git repo** moves a window to that card only after it stayed there a
   minute, so a quick `cd` while typing never pulls the tab away.
 - **SSH host cards** start with a colored dot per host (🔵 🟣 🟢 …) so hosts tell apart in a status
@@ -105,8 +104,8 @@ Plugin Development. `⌘⌥⇧T` sync now, `⌘⌥⇧N` new window in the focuse
 `intervalSec`: seconds between light checks. A light check scans tmux (only agent panes' screens
 are read; git roots are cached per folder) and lists Orca's groups, workspaces and tabs; the full
 sync runs only when something changed, and at least every 30 s. tmux hooks (`set-hook -g …[77]`)
-wake the runner the moment windows, panes or sessions come and go, and a once-a-second tab check
-catches a "+" in Orca, so changes show up in about a second.
+wake the runner the moment windows, panes or sessions come and go, and a tab check twice a second
+catches a "+" in Orca. SSH hosts sync on their own lanes, so a slow host never delays the local one.
 
 ## State
 

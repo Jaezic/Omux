@@ -81,6 +81,9 @@ function fakeOrca() {
           return {}
         case 'terminal.rename':
           return {}
+        case 'terminal.focus':
+          orca.focused = [...(orca.focused ?? []), params.terminal]
+          return {}
         case 'terminal.send': {
           // Typed into a tab's shell: an attach command makes that tab the window's view.
           orca.sent.push(params)
@@ -524,45 +527,24 @@ function plusTab(screen, handle = 'plus') {
   orca.terminals.push({ handle, worktreeId: `folder:${fw.id}`, title: 'Terminal 9', screen })
 }
 
-test('a plain "+" tab stays on its folder card and becomes a new tmux window there', async () => {
+test('a plain "+" opens a new window with its own card at once, focuses its tab, then closes', async () => {
   plusTab(undefined)
-  await settle()
-  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id}' -c '/tmp'`)))
-  assert.ok(!tmux.commands.some((c) => c.includes('send-keys')))
-  assert.ok(orca.terminals.some((t) => t.handle === 'plus'), 'the tab someone is typing in stays')
-  assert.match(orca.sent.find((p) => p.terminal === 'plus')?.text ?? '', /^\u0015exec sh -c .* '@99' ''$/, 'the half-typed line is cleared first')
-  // The new window joins the card: no new card, no second tab.
+  await engine.tick()
+  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id}' -c '/tmp'`)), 'the window opens on first sight')
+  assert.ok(!orca.sent.some((p) => p.terminal === 'plus'), 'nothing is typed into the "+" tab')
   const cards = orca.workspaces.length
   tmux.windows.push({ id: '@99', index: 3, name: 'zsh', path: '/tmp', panes: [{ id: '%99', index: 1, agent: null, state: null, title: 'zsh' }] })
-  const created = orca.calls.filter((m) => m === 'terminal.create').length
-  await settle()
-  assert.equal(orca.workspaces.length, cards)
-  assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, created)
-  const card = orca.workspaces.find((w) => w.folderPath === '/tmp')
-  assert.equal(card.name, '2 shell', 'named after its lowest-numbered window')
-  assert.equal(card.comment, '2 shell · 3 zsh', 'its windows listed in the note')
+  await engine.tick()
+  assert.equal(orca.workspaces.length, cards + 1, 'a card of its own')
+  const tab = orca.terminals.find((t) => t.worktreeId === `folder:${orca.workspaces.at(-1).id}`)
+  assert.ok(orca.focused?.includes(tab.handle), 'its tab gets focus')
+  assert.ok(orca.terminals.some((t) => t.handle === 'plus'), 'the "+" tab is not closed yet')
+  mock.timers.tick(1_600)
+  await engine.tick()
+  assert.ok(!orca.terminals.some((t) => t.handle === 'plus'), 'then it closes')
+  assert.equal(tmux.commands.filter((c) => c.includes('new-window')).length, 1)
 })
 
-test('a window on a shared folder card stays on it wherever it cds; the card goes with its last window', async () => {
-  plusTab(undefined)
-  await settle()
-  tmux.windows.push({ id: '@99', index: 3, name: 'zsh', path: '/tmp', panes: [{ id: '%99', index: 1, agent: null, state: null, title: 'zsh' }] })
-  await settle()
-  const shared = orca.workspaces.find((w) => w.folderPath === '/tmp').id
-  const cards = orca.workspaces.length
-  tmux.windows[2].path = '/var'
-  tmux.windows[2].gitRoot = '/var'
-  await settleMove()
-  assert.equal(orca.workspaces.length, cards, 'no card added or removed')
-  assert.ok(orca.terminals.some((t) => t.handle === 'plus'), 'its tab never closed')
-  assert.equal(orca.workspaces.find((w) => w.id === shared).folderPath, '/tmp', 'the card keeps its owner window folder')
-  tmux.windows = tmux.windows.filter((w) => w.id !== '@2') // the owner closes in tmux
-  await settle()
-  assert.ok(orca.workspaces.some((w) => w.id === shared), 'still used by the other window')
-  tmux.windows = tmux.windows.filter((w) => w.id !== '@99')
-  await settle()
-  assert.ok(!orca.workspaces.some((w) => w.id === shared), 'last window gone: the card goes')
-})
 
 test('Claude or Codex picked in the "+" menu runs in the new tmux window, not in the Orca tab', async () => {
   plusTab(['  Update available · 0.163.0 → 0.164.0', '  Release notes: https://github.com/openai/codex/releases/latest'])
@@ -695,23 +677,6 @@ test('renaming a group in Orca renames its tmux session', async () => {
   assert.equal(orca.groups.length, 1)
 })
 
-test('a plain "+" tab on a git card stays and becomes the new window\'s tab', async () => {
-  gitWindows()
-  await settleMove()
-  mock.timers.tick(31_000) // past the window where Orca's default shell in a new git card is closed
-  await settle()
-  const card = orca.terminals.find((t) => t.worktreeId.includes('::'))?.worktreeId
-  tmux.commands = []
-  orca.terminals.push({ handle: 'stay', worktreeId: card, title: 'Terminal 3' })
-  await settle()
-  assert.ok(orca.terminals.some((t) => t.handle === 'stay'), 'the tab was not closed')
-  assert.match(orca.sent.find((p) => p.terminal === 'stay')?.text ?? '', /^\u0015exec sh -c .* '@99' ''$/)
-  // The new window shows up in tmux; its tab is the one already there.
-  tmux.windows.push({ id: '@99', index: 4, name: 'zsh', path: '/src/app/api', gitRoot: '/src/app', panes: [{ id: '%99', index: 1, agent: null, state: null, title: 'zsh' }] })
-  const created = orca.calls.filter((m) => m === 'terminal.create').length
-  await settle()
-  assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, created, 'no second tab for it')
-})
 
 test('agent tabs read "<idle age> · <task>", without agent name or state glyph', async () => {
   assert.deepEqual(orca.terminals.map((t) => t.title).filter((t) => !/^\d /.test(t)).sort(), ['a', 'b'])
