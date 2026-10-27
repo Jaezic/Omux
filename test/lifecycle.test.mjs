@@ -172,6 +172,12 @@ const tabFor = (paneOrWindow) => {
   const view = paneOrWindow.startsWith('%') ? `orca-p${paneOrWindow.slice(1)}` : `orca-w${paneOrWindow.slice(1)}`
   return { view }
 }
+// A window that cd'd into or out of a repo moves card only after staying there a minute.
+async function settleMove() {
+  await settle()
+  mock.timers.tick(61_000)
+  await settle()
+}
 async function settle() {
   await engine.tick()
   mock.timers.tick(5_000)
@@ -323,7 +329,7 @@ function gitWindows() {
 
 test('a window inside a git repo gets the repo as a git card in its session group', async () => {
   gitWindows()
-  await settle()
+  await settleMove()
   assert.equal(orca.repos.length, 1, 'one card for the shared repo')
   assert.equal(orca.repos[0].path, '/src/app')
   assert.equal(orca.repos[0].projectGroupId, orca.groups[0].id)
@@ -335,7 +341,7 @@ test('a window inside a git repo gets the repo as a git card in its session grou
 
 test('tabs of two windows on one git card are never mistaken for "+" tabs', async () => {
   gitWindows()
-  await settle()
+  await settleMove()
   await settle()
   await settle()
   assert.equal(tmux.commands.filter((c) => c.includes('new-window')).length, 0)
@@ -344,6 +350,8 @@ test('tabs of two windows on one git card are never mistaken for "+" tabs', asyn
 
 test('Orca\'s default shell in a just-added git card is closed, not turned into a window', async () => {
   gitWindows()
+  await engine.tick()
+  mock.timers.tick(61_000) // the windows moved into the repo a minute ago
   await engine.tick()
   const card = `${orca.repos[0].id}::/src/app`
   orca.terminals.push({ handle: 'default-shell', worktreeId: card, title: 'Terminal 1' })
@@ -354,7 +362,7 @@ test('Orca\'s default shell in a just-added git card is closed, not turned into 
 
 test('removing a git card used by one window kills that window', async () => {
   tmux.windows[0].gitRoot = '/repo' // "1 work" is in a repo, "2 shell" is not
-  await settle()
+  await settleMove()
   await settle()
   const repo = orca.repos[0]
   orca.repos = []
@@ -365,13 +373,27 @@ test('removing a git card used by one window kills that window', async () => {
   assert.deepEqual(tmux.kills(), [`tmux kill-window -t '@1'`])
 })
 
-test('cd out of a repo moves the window to a folder workspace and drops the unused git card', async () => {
+test('cd into or out of a repo moves the window card only after a minute there', async () => {
   tmux.windows[0].gitRoot = '/repo'
   await settle()
+  assert.equal(orca.repos.length, 0, 'a quick cd into a repo does not pull the tab away')
+  tmux.windows[0].gitRoot = null // and back out
+  await settle()
+  mock.timers.tick(61_000)
+  await settle()
+  assert.equal(orca.repos.length, 0)
+  tmux.windows[0].gitRoot = '/repo'
+  await settleMove()
+  assert.equal(orca.repos.length, 1, 'stayed a minute: on the git card')
+})
+
+test('cd out of a repo moves the window to a folder workspace and drops the unused git card', async () => {
+  tmux.windows[0].gitRoot = '/repo'
+  await settleMove()
   assert.equal(orca.repos.length, 1)
   tmux.windows[0].gitRoot = null
   tmux.windows[0].path = '/elsewhere'
-  await settle()
+  await settleMove()
   await settle()
   assert.deepEqual(tmux.kills(), [], 'moving cards never kills')
   assert.ok(orca.workspaces.some((f) => f.name === '1 work' && f.folderPath === '/elsewhere'))
@@ -502,12 +524,44 @@ function plusTab(screen, handle = 'plus') {
   orca.terminals.push({ handle, worktreeId: `folder:${fw.id}`, title: 'Terminal 9', screen })
 }
 
-test('a plain "+" tab becomes a plain tmux window in that folder', async () => {
+test('a plain "+" tab stays on its folder card and becomes a new tmux window there', async () => {
   plusTab(undefined)
   await settle()
   assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id}' -c '/tmp'`)))
   assert.ok(!tmux.commands.some((c) => c.includes('send-keys')))
-  assert.ok(!orca.terminals.some((t) => t.handle === 'plus'))
+  assert.ok(orca.terminals.some((t) => t.handle === 'plus'), 'the tab someone is typing in stays')
+  assert.match(orca.sent.find((p) => p.terminal === 'plus')?.text ?? '', /^\u0015exec sh -c .* '@99' ''$/, 'the half-typed line is cleared first')
+  // The new window joins the card: no new card, no second tab.
+  const cards = orca.workspaces.length
+  tmux.windows.push({ id: '@99', index: 3, name: 'zsh', path: '/tmp', panes: [{ id: '%99', index: 1, agent: null, state: null, title: 'zsh' }] })
+  const created = orca.calls.filter((m) => m === 'terminal.create').length
+  await settle()
+  assert.equal(orca.workspaces.length, cards)
+  assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, created)
+  const card = orca.workspaces.find((w) => w.folderPath === '/tmp')
+  assert.equal(card.name, '2 shell', 'named after its lowest-numbered window')
+  assert.equal(card.comment, '2 shell · 3 zsh', 'its windows listed in the note')
+})
+
+test('a window on a shared folder card stays on it wherever it cds; the card goes with its last window', async () => {
+  plusTab(undefined)
+  await settle()
+  tmux.windows.push({ id: '@99', index: 3, name: 'zsh', path: '/tmp', panes: [{ id: '%99', index: 1, agent: null, state: null, title: 'zsh' }] })
+  await settle()
+  const shared = orca.workspaces.find((w) => w.folderPath === '/tmp').id
+  const cards = orca.workspaces.length
+  tmux.windows[2].path = '/var'
+  tmux.windows[2].gitRoot = '/var'
+  await settleMove()
+  assert.equal(orca.workspaces.length, cards, 'no card added or removed')
+  assert.ok(orca.terminals.some((t) => t.handle === 'plus'), 'its tab never closed')
+  assert.equal(orca.workspaces.find((w) => w.id === shared).folderPath, '/tmp', 'the card keeps its owner window folder')
+  tmux.windows = tmux.windows.filter((w) => w.id !== '@2') // the owner closes in tmux
+  await settle()
+  assert.ok(orca.workspaces.some((w) => w.id === shared), 'still used by the other window')
+  tmux.windows = tmux.windows.filter((w) => w.id !== '@99')
+  await settle()
+  assert.ok(!orca.workspaces.some((w) => w.id === shared), 'last window gone: the card goes')
 })
 
 test('Claude or Codex picked in the "+" menu runs in the new tmux window, not in the Orca tab', async () => {
@@ -643,7 +697,7 @@ test('renaming a group in Orca renames its tmux session', async () => {
 
 test('a plain "+" tab on a git card stays and becomes the new window\'s tab', async () => {
   gitWindows()
-  await settle()
+  await settleMove()
   mock.timers.tick(31_000) // past the window where Orca's default shell in a new git card is closed
   await settle()
   const card = orca.terminals.find((t) => t.worktreeId.includes('::'))?.worktreeId
@@ -651,7 +705,7 @@ test('a plain "+" tab on a git card stays and becomes the new window\'s tab', as
   orca.terminals.push({ handle: 'stay', worktreeId: card, title: 'Terminal 3' })
   await settle()
   assert.ok(orca.terminals.some((t) => t.handle === 'stay'), 'the tab was not closed')
-  assert.match(orca.sent.find((p) => p.terminal === 'stay')?.text ?? '', /^exec sh -c .* '@99' ''$/)
+  assert.match(orca.sent.find((p) => p.terminal === 'stay')?.text ?? '', /^\u0015exec sh -c .* '@99' ''$/)
   // The new window shows up in tmux; its tab is the one already there.
   tmux.windows.push({ id: '@99', index: 4, name: 'zsh', path: '/src/app/api', gitRoot: '/src/app', panes: [{ id: '%99', index: 1, agent: null, state: null, title: 'zsh' }] })
   const created = orca.calls.filter((m) => m === 'terminal.create').length
@@ -671,7 +725,7 @@ test('agent tabs read "<idle age> · <task>", without agent name or state glyph'
 
 test('a git card shared by windows lists them in its note; a note someone wrote stays', async () => {
   gitWindows()
-  await settle()
+  await settleMove()
   const card = [...orca.meta.entries()].find(([, m]) => m.comment)
   assert.equal(card?.[1].comment, '1 api · 2 web')
   card[1].comment = 'my own note'
@@ -682,7 +736,7 @@ test('a git card shared by windows lists them in its note; a note someone wrote 
 
 test('a Linear key in the branch name links the issue once, if Orca is connected to Linear', async () => {
   gitWindows()
-  await settle()
+  await settleMove()
   const [key, meta] = [...orca.meta.entries()].find(([k]) => k.endsWith('::/src/app'))
   meta.branch = 'refs/heads/me/sva-1593-fix'
   orca.linear = ['SVA-1593']
