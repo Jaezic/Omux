@@ -94,6 +94,13 @@ function fakeOrca() {
           return { isRunningAgent: Boolean(orca.terminals.find((t) => t.handle === params.terminal)?.screen) }
         case 'terminal.read':
           return { terminal: { tail: orca.terminals.find((t) => t.handle === params.terminal)?.screen ?? [] } }
+        case 'linear.status':
+          return { connected: orca.linear !== undefined }
+        case 'linear.getIssue':
+          if (!orca.linear?.includes(params.id)) {
+            throw new Error('not found')
+          }
+          return { issue: { identifier: params.id } }
         case 'ui.get':
           return { ui: { workspaceStatuses: orca.lanes } }
         default:
@@ -658,4 +665,32 @@ test('agent tabs read "<idle age> · <task>", without agent name or state glyph'
   await engine.tick()
   const renames = orca.calls.filter((m) => m === 'terminal.rename').length
   assert.ok(renames > 0, 'titles follow the idle age')
+})
+
+// --- card metadata from Orca integrations ---------------------------------------------------
+
+test('a git card shared by windows lists them in its note; a note someone wrote stays', async () => {
+  gitWindows()
+  await settle()
+  const card = [...orca.meta.entries()].find(([, m]) => m.comment)
+  assert.equal(card?.[1].comment, '1 api · 2 web')
+  card[1].comment = 'my own note'
+  tmux.windows[1].name = 'frontend'
+  await settle()
+  assert.equal(card[1].comment, 'my own note')
+})
+
+test('a Linear key in the branch name links the issue once, if Orca is connected to Linear', async () => {
+  gitWindows()
+  await settle()
+  const [key, meta] = [...orca.meta.entries()].find(([k]) => k.endsWith('::/src/app'))
+  meta.branch = 'refs/heads/me/sva-1593-fix'
+  orca.linear = ['SVA-1593']
+  mock.timers.tick(31_000)
+  await settle()
+  assert.equal(orca.meta.get(key).linkedLinearIssue, 'SVA-1593')
+  orca.meta.get(key).linkedLinearIssue = null // the user unlinks it
+  mock.timers.tick(31_000)
+  await settle()
+  assert.equal(orca.meta.get(key).linkedLinearIssue, null, 'not linked again')
 })
