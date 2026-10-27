@@ -52,10 +52,13 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   answer, read off its screen (claude `⏺`, codex `•`; tool calls skipped), or its task.
 - **A group added in Orca** as `<host> · <name>` (e.g. `local · api`) becomes a new tmux session.
   Removing a group never kills a session.
-- **Closing a tab** kills its pane (agent tab) or window (window tab); **removing a window's
-  workspace** kills the window. Only when exactly one disappears while another tab of the same
-  session is still open — bulk disappearance (workspace slept, Orca restarting) never kills. A kept
-  window's workspace is not recreated until "tmux: Reopen Closed Windows".
+- **Closing a tab** kills its pane (agent tab) or window (window tab), only when exactly one
+  disappears while another tab of the same session is still open: bulk disappearance (workspace
+  slept, Orca restarting) never kills.
+- **Removing a window's card** kills the window, also when it is the session's last (Orca never
+  removes workspaces by itself), unless an agent in it is working or waiting for approval: then the
+  card is only hidden. A hidden card stays hidden across restarts until the window closes or
+  "tmux: Reopen Closed Windows".
 - **Detach / ssh drop** reopens the tab; the window is kept.
 - **Hosts**: local plus SSH hosts connected in Orca (`"hosts": "orca"`) that have an orcad server.
   They are reached over Orca's own connection, never a second SSH login: orcad can read and write

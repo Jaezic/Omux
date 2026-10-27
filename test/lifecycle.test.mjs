@@ -760,3 +760,32 @@ test('a failed local scan is retried on the next pass, not minutes later', async
   await engine.tick()
   assert.ok(tmux.commands.some((c) => c.includes('@orca_title') && c.includes('⠋')), 'scanned and synced again at once')
 })
+
+// --- removing the card of a session's only window ---------------------------------------------
+
+function soloSession(state) {
+  tmux.windows = [{ id: '@5', index: 1, name: 'solo', path: '/solo', panes: [{ id: '%5', index: 1, agent: 'claude', state, title: '✳ solo task' }] }]
+}
+
+test('removing the card of a session\'s only window closes the window (and with it the session)', async () => {
+  soloSession('idle')
+  await settle()
+  await settle()
+  userRemovesWorkspace(orca.workspaces.find((w) => w.folderPath === '/solo').name)
+  await settle()
+  assert.deepEqual(tmux.kills(), [`tmux kill-window -t '@5'`])
+})
+
+test('a removed card over a working agent only hides it, and stays hidden after a restart', async () => {
+  soloSession('working')
+  await settle()
+  await settle()
+  userRemovesWorkspace(orca.workspaces.find((w) => w.folderPath === '/solo').name)
+  await settle()
+  assert.deepEqual(tmux.kills(), [], 'never under a working agent')
+  assert.ok(!orca.workspaces.some((w) => w.folderPath === '/solo'))
+  // The runner restarts: a new engine on the saved state.
+  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run })
+  await settle()
+  assert.ok(!orca.workspaces.some((w) => w.folderPath === '/solo'), 'the card does not come back')
+})
