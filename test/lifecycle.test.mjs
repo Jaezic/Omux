@@ -193,7 +193,7 @@ beforeEach(async () => {
   mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 9, 26, 5, 0) })
   orca = fakeOrca()
   tmux = fakeTmux(orca)
-  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: tmux.scan, runTmux: tmux.run })
+  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run })
   await engine.tick()
 })
 
@@ -693,4 +693,16 @@ test('a Linear key in the branch name links the issue once, if Orca is connected
   mock.timers.tick(31_000)
   await settle()
   assert.equal(orca.meta.get(key).linkedLinearIssue, null, 'not linked again')
+})
+
+test('a failed local scan is retried on the next pass, not minutes later', async () => {
+  const scan = tmux.scan
+  tmux.scan = async () => {
+    throw new Error('timed out')
+  }
+  await engine.tick()
+  tmux.scan = scan
+  tmux.windows[0].panes[0].state = 'working'
+  await engine.tick()
+  assert.ok(tmux.commands.some((c) => c.includes('@orca_title') && c.includes('⠋')), 'scanned and synced again at once')
 })
