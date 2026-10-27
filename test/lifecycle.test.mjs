@@ -7,13 +7,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 process.env.ORCA_TMUX_HOME = mkdtempSync(join(tmpdir(), 'omux-test-'))
-const { createSyncEngine } = await import('../lib/sync.mjs')
+const { createSyncEngine, hookScript } = await import('../lib/sync.mjs')
 
 function fakeOrca() {
   const orca = { groups: [], workspaces: [], terminals: [], repos: [], meta: new Map(), seq: 0, runtimeId: 'run-1', views: new Map(), lanes: [{ id: 'todo', label: 'Todo' }] }
   const id = (p) => `${p}-${++orca.seq}`
+  orca.calls = []
   orca.bridge = {
     async call(_env, method, params) {
+      orca.calls.push(method)
       switch (method) {
         case 'projectGroup.list':
           return { groups: orca.groups }
@@ -538,4 +540,55 @@ test('a conversation Orca resumed in a new tab continues in the tmux window', as
   plusTab([' ▐▛███▛█   Claude Code v2.1.310'], 'resumed')
   await settle()
   assert.match(tmux.commands.find((c) => c.includes('send-keys')), /-l 'claude --resume 0b5d7a2e-1111-4222-8333-944455556666'/)
+})
+
+// --- light checks between full passes ------------------------------------------------------
+
+const fullPasses = () => orca.calls.filter((m) => m === 'worktree.list').length
+
+test('an unchanged host is not fully synced again until 30s have passed', async () => {
+  await engine.tick()
+  const before = fullPasses()
+  await engine.tick()
+  await engine.tick()
+  assert.equal(fullPasses(), before, 'nothing changed: only the light check ran')
+  mock.timers.tick(31_000)
+  await engine.tick()
+  assert.equal(fullPasses(), before + 1, 'one full pass every 30s regardless')
+})
+
+test('a change in tmux or Orca gets a full pass at once', async () => {
+  await engine.tick()
+  const before = fullPasses()
+  tmux.windows[0].panes[0].state = 'working'
+  await engine.tick()
+  assert.equal(fullPasses(), before + 1)
+  orca.workspaces.find((f) => f.name === '2 shell').name = 'renamed'
+  await engine.tick()
+  assert.equal(fullPasses(), before + 2)
+})
+
+test('a new "+" tab asks for a quick follow-up and becomes a window within 1.5s', async () => {
+  await engine.tick()
+  plusTab(undefined, 'quick')
+  const first = await engine.tick()
+  assert.equal(first.soon, true, 'the tab is settling: look again in a second')
+  mock.timers.tick(1_600)
+  await engine.tick()
+  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id}' -c '/tmp'`)))
+})
+
+test('hookScript installs idempotent hooks that touch the trigger file', () => {
+  const script = hookScript('/home/me/.orca-tmux/trigger')
+  assert.match(script, /set-hook -g 'after-new-window\[77\]' "run-shell -b 'touch \/home\/me\/\.orca-tmux\/trigger'"/)
+  assert.match(script, /'window-unlinked\[77\]'/)
+  assert.match(script, /'session-created\[77\]'/)
+})
+
+test('probe notices a tab opened in Orca between passes', async () => {
+  await engine.tick()
+  assert.equal(await engine.probe(), false)
+  assert.equal(await engine.probe(), false, 'nothing new')
+  plusTab(undefined, 'probe-me')
+  assert.equal(await engine.probe(), true)
 })

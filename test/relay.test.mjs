@@ -30,6 +30,9 @@ function fakeOrca({ helperRunning = true } = {}) {
       case 'folderWorkspace.delete':
         workspaces.splice(workspaces.findIndex((w) => w.id === p.folderWorkspaceId), 1)
         return {}
+      case 'projectGroup.update':
+        Object.assign(groups.find((g) => g.id === p.groupId), p.updates)
+        return {}
       case 'projectGroup.delete':
         groups.splice(groups.findIndex((g) => g.id === p.groupId), 1)
         return {}
@@ -82,8 +85,7 @@ test('scan starts the helper once when there is no scan yet, then reads it', asy
   await assert.rejects(relay.scan('h'), (err) => err.relayStarting === true)
   assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, 1)
   assert.ok(orca.files.get('.orca-tmux/remote/helper.sh').includes('__RC__'))
-  assert.deepEqual(state.relay.h, { group: 'g1', fw: 'w1', own: true })
-  assert.equal(orca.workspaces[0].isArchived, true, 'archived: hidden from the sidebar')
+  assert.deepEqual(state.relay.h, { group: 'g1', fw: 'w1' })
   orca.files.set('.orca-tmux/remote/scan.out', '__HOME__/home/me\n__SESSIONS__\n__PS__\n__CAP__\n__AT__1700000000\n')
   const scan = await relay.scan('h')
   assert.equal(scan.home, '/home/me')
@@ -102,20 +104,17 @@ test('the helper runs queued commands and exits once the runner goes quiet', () 
   execFileSync('rm', ['-rf', home])
 })
 
-test('the hidden workspace lives in a session group; its own group goes once one exists', async () => {
+test('the workspace sits in a collapsed group without a parent folder, so Orca draws no card', async () => {
   const orca = fakeOrca()
-  const state = {}
-  let session = null
-  const relay = createRelay({ rpc: orca.rpc, state, hostGroup: () => session })
+  orca.groups.push({ id: 'sess', name: 'h · 0', parentPath: '/home/me' })
+  orca.workspaces.push({ id: 'old', projectGroupId: 'sess', folderPath: '/home/me' })
+  const state = { relay: { h: { group: 'sess', fw: 'old' } } } // an earlier layout: a visible card
+  const relay = createRelay({ rpc: orca.rpc, state })
   await relay.exec('h', 'true')
-  assert.deepEqual(orca.groups.map((g) => g.name), ['Omux relay'], 'no session yet: a group of its own')
-  session = 'sess'
-  orca.groups.push({ id: 'sess', name: 'h · 0' })
-  const fresh = createRelay({ rpc: orca.rpc, state, hostGroup: () => session }) // next run
-  await fresh.exec('h', 'true')
-  assert.deepEqual(orca.groups.map((g) => g.id), ['sess'], 'the relay group is gone')
-  assert.deepEqual(orca.workspaces.map((w) => [w.projectGroupId, w.isArchived]), [['sess', true]])
-  assert.equal(state.relay.h.own, false)
+  assert.deepEqual(orca.workspaces.map((w) => w.projectGroupId), ['g1'], 'the visible card is gone')
+  const group = orca.groups.find((g) => g.id === 'g1')
+  assert.equal(group.parentPath, undefined)
+  assert.deepEqual([group.isCollapsed, group.tabOrder], [true, 1_000_000])
 })
 
 test('a helper from an older version is replaced once per run', async () => {

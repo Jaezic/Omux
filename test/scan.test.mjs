@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { ASK_AWK, classifyCommand, findOrcaAgentArgs, parseDoneStamp, parseScan, resumeArgs } from '../lib/scan.mjs'
+import { STATE_AWK, classifyCommand, findOrcaAgentArgs, parseDoneStamp, parseScan, resumeArgs } from '../lib/scan.mjs'
 
 const SEP = '|#|'
 const pane = (session, windowId, index, name, paneId, paneIndex, active, pid, path, title) =>
@@ -101,15 +101,27 @@ test('parseScan keeps what a waiting agent asks to do', () => {
   assert.equal(b.ask, null, 'only while waiting')
 })
 
-test('ASK_AWK finds the command on claude and codex approval screens', () => {
-  const ask = (screen) => execFileSync('awk', [ASK_AWK], { input: screen }).toString().trim()
+test('STATE_AWK reads state, request and done stamp from agent screens', () => {
+  const run = (...panes) =>
+    execFileSync('awk', [STATE_AWK], { input: panes.map(([id, screen]) => `@@PANE ${id}\n${screen.join('\n')}`).join('\n') })
+      .toString()
+      .trim()
+      .split('\n')
   const rule = '╌'.repeat(20)
-  const claude = [' Bash command', ' Create an empty file', rule, ' touch /tmp/a.txt', rule, ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No'].join('\n')
-  const codex = ['  Would you like to run the following command?', '  Reason: needs write access', '  $ touch /tmp/b.txt', '› 1. Yes, proceed (y)'].join('\n')
-  const edit = [' Edit file', ' Do you want to make this edit to app.ts?', ' ❯ 1. Yes'].join('\n')
-  assert.equal(ask(claude), 'touch /tmp/a.txt')
-  assert.equal(ask(codex), 'touch /tmp/b.txt')
-  assert.equal(ask(edit), 'Do you want to make this edit to app.ts?')
+  const claude = [' Bash command', ' Create an empty file', rule, ' touch /tmp/a.txt', rule, ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No', '', '', '']
+  const codex = ['  Would you like to run the following command?', '  Reason: needs write access', '  $ touch /tmp/b.txt', '› 1. Yes, proceed (y)']
+  const edit = [' Edit file', ' Do you want to make this edit to app.ts?', ' ❯ 1. Yes']
+  const working = ['✻ Cooked for 5s · done 1:51 PM', '❯ next', '✶ Thinking… (3s · esc to interrupt)']
+  assert.deepEqual(run(['%1', claude], ['%2', codex], ['%3', edit], ['%4', working]), [
+    '%1 waiting',
+    '%1 @ask touch /tmp/a.txt',
+    '%2 waiting',
+    '%2 @ask touch /tmp/b.txt',
+    '%3 waiting',
+    '%3 @ask Do you want to make this edit to app.ts?',
+    '%4 working',
+    '%4 @done · done 1:51 PM'
+  ])
 })
 
 test('findOrcaAgentArgs picks the newest agent in an Orca terminal, not one in tmux', () => {

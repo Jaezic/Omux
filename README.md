@@ -68,7 +68,7 @@ Plugin Development. `⌘⌥⇧T` sync now, `⌘⌥⇧N` new window in the focuse
 {
   "hosts": "orca",
   "exclude": [],
-  "intervalSec": 5,
+  "intervalSec": 3,
   "notify": true,
   "closeTabKillsWindow": true,
   "gitCards": true,
@@ -77,6 +77,12 @@ Plugin Development. `⌘⌥⇧T` sync now, `⌘⌥⇧N` new window in the focuse
 ```
 
 `hosts`: `"orca"` (connected in Orca), `"ssh-config"` (every `Host` alias), or a list.
+
+`intervalSec`: seconds between light checks. A light check scans tmux (only agent panes' screens
+are read; git roots are cached per folder) and lists Orca's groups, workspaces and tabs; the full
+sync runs only when something changed, and at least every 30 s. tmux hooks (`set-hook -g …[77]`)
+wake the runner the moment windows, panes or sessions come and go, and a once-a-second tab check
+catches a "+" in Orca, so changes show up in about a second.
 
 ## State
 
