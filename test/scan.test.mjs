@@ -147,3 +147,15 @@ test('resumeArgs keeps only the resume part of an agent command line', () => {
   assert.equal(resumeArgs('codex', 'codex resume --last'), 'resume --last')
   assert.equal(resumeArgs('codex', 'codex'), '')
 })
+
+test('STATE_AWK has no single quote: it is passed to awk inside single quotes', () => {
+  assert.ok(!STATE_AWK.includes("'"))
+})
+
+test('STATE_AWK reads the last answer, not tool calls; for claude the one before the done footer', () => {
+  const run = (screen) => execFileSync('awk', [STATE_AWK], { input: `@@PANE %1\n${screen.join('\n')}` }).toString()
+  const claude = ['⏺ Bash(ls)', '  ⎿  a b', '⏺ Listed the files.', '  Two of them are new.', '✻ Cooked for 3s · done 1:51 PM', '⏺ Stopped watching Artifact', '❯ ']
+  assert.match(run(claude), /^%1 @msg Listed the files\. Two of them are new\.$/m)
+  const codex = ['• Ran npm test', '• All 12 tests pass.', '• Called linear.get_issue', '› next']
+  assert.match(run(codex), /^%1 @msg All 12 tests pass\.$/m)
+})

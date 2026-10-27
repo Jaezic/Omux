@@ -44,7 +44,8 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
 - **Shared git cards** list their windows in the card's note; a note you write is left alone.
 - **Ports**: Orca itself shows dev-server ports on local git cards, tmux ones included. It has no
   port display for folder or SSH workspaces.
-- **Notifications**: Orca's completion notification names the card and carries the agent's task.
+- **Notifications**: Orca's completion notification names the card and shows the agent's last
+  answer, read off its screen (claude `⏺`, codex `•`; tool calls skipped), or its task.
 - **A group added in Orca** as `<host> · <name>` (e.g. `local · api`) becomes a new tmux session.
   Removing a group never kills a session.
 - **Closing a tab** kills its pane (agent tab) or window (window tab); **removing a window's
