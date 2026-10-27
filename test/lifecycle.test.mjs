@@ -45,7 +45,7 @@ function fakeOrca() {
           orca.workspaces = orca.workspaces.filter((f) => f.id !== params.folderWorkspaceId)
           return {}
         case 'terminal.list':
-          return { terminals: orca.terminals }
+          return { terminals: [...orca.terminals] } // a snapshot, like Orca's
         case 'repo.list':
           return { repos: orca.repos }
         case 'repo.add': {
@@ -164,7 +164,7 @@ function fakeTmux(orca) {
     if (script.includes('-name .git -print')) {
       return tmux.nested.join('\n') + '\n'
     }
-    return script.includes('new-window') ? '@99\n' : ''
+    return script.includes('new-window') ? '@99 3 zsh\n' : ''
   }
   tmux.kills = () => tmux.commands.filter((c) => /kill-(window|pane)/.test(c))
   return tmux
@@ -202,7 +202,7 @@ beforeEach(async () => {
   mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 9, 26, 5, 0) })
   orca = fakeOrca()
   tmux = fakeTmux(orca)
-  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run })
+  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run, log: process.env.OMUX_TEST_LOG ? console.log : undefined })
   await engine.tick()
 })
 
@@ -487,7 +487,7 @@ test('a workspace added as "claude <name>" opens a window running claude, named 
   orca.workspaces.push({ id: 'ws-claude', projectGroupId: group, name: 'claude fix login', folderPath: '/repo/web', createdAt: Date.now() })
   await engine.tick()
   const cmd = tmux.commands.find((c) => c.includes('send-keys'))
-  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id}' -c '/repo/web'`)))
+  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id} #{window_index} #{window_name}' -c '/repo/web'`)))
   assert.match(cmd, /send-keys -t '@99' -l 'claude'/)
   assert.match(cmd, /rename-window -t '@99' 'fix login'/)
 })
@@ -527,17 +527,22 @@ function plusTab(screen, handle = 'plus') {
   orca.terminals.push({ handle, worktreeId: `folder:${fw.id}`, title: 'Terminal 9', screen })
 }
 
-test('a plain "+" opens a new window with its own card at once, focuses its tab, then closes', async () => {
+test('a plain "+" opens a new window with its own card and focused tab at once, then closes', async () => {
+  const cards = orca.workspaces.length
   plusTab(undefined)
   await engine.tick()
-  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id}' -c '/tmp'`)), 'the window opens on first sight')
-  assert.ok(!orca.sent.some((p) => p.terminal === 'plus'), 'nothing is typed into the "+" tab')
-  const cards = orca.workspaces.length
-  tmux.windows.push({ id: '@99', index: 3, name: 'zsh', path: '/tmp', panes: [{ id: '%99', index: 1, agent: null, state: null, title: 'zsh' }] })
-  await engine.tick()
-  assert.equal(orca.workspaces.length, cards + 1, 'a card of its own')
+  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id} #{window_index} #{window_name}' -c '/tmp'`)), 'the window opens on first sight')
+  assert.equal(orca.workspaces.length, cards + 1, 'a card of its own, in the same pass')
   const tab = orca.terminals.find((t) => t.worktreeId === `folder:${orca.workspaces.at(-1).id}`)
-  assert.ok(orca.focused?.includes(tab.handle), 'its tab gets focus')
+  assert.ok(tab, 'with its tab')
+  assert.ok(orca.focused?.includes(tab.handle), 'which gets focus')
+  assert.ok(!orca.sent.some((p) => p.terminal === 'plus'), 'nothing is typed into the "+" tab')
+  // When the window shows up in tmux, nothing more is created for it.
+  tmux.windows.push({ id: '@99', index: 3, name: 'zsh', path: '/tmp', panes: [{ id: '%99', index: 1, agent: null, state: null, title: 'zsh' }] })
+  const created = orca.calls.filter((m) => m === 'terminal.create').length
+  await engine.tick()
+  assert.equal(orca.workspaces.length, cards + 1)
+  assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, created)
   assert.ok(orca.terminals.some((t) => t.handle === 'plus'), 'the "+" tab is not closed yet')
   mock.timers.tick(1_600)
   await engine.tick()
@@ -637,7 +642,7 @@ test('a new "+" tab asks for a quick follow-up and becomes a window within 1.5s'
   assert.equal(first.soon, true, 'the tab is settling: look again in a second')
   mock.timers.tick(1_600)
   await engine.tick()
-  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id}' -c '/tmp'`)))
+  assert.ok(tmux.commands.some((c) => c.includes(`new-window -d -P -F '#{window_id} #{window_index} #{window_name}' -c '/tmp'`)))
 })
 
 test('hookScript installs idempotent hooks that touch the trigger file', () => {
@@ -751,7 +756,7 @@ test('a removed card over a working agent only hides it, and stays hidden after 
   assert.deepEqual(tmux.kills(), [], 'never under a working agent')
   assert.ok(!orca.workspaces.some((w) => w.folderPath === '/solo'))
   // The runner restarts: a new engine on the saved state.
-  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run })
+  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run, log: process.env.OMUX_TEST_LOG ? console.log : undefined })
   await settle()
   assert.ok(!orca.workspaces.some((w) => w.folderPath === '/solo'), 'the card does not come back')
 })

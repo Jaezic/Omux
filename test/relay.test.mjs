@@ -41,6 +41,12 @@ function fakeOrca({ helperRunning = true } = {}) {
       case 'files.write':
         assert.equal(p.expectedExecutionHostId, 'local', 'orcad refuses writes without it')
         files.set(p.relativePath, p.content)
+        if (helperRunning && /\/cmd\/[^/]+\.sh$/.test(p.relativePath)) {
+          assert.match(p.content, /\n#__omux_end__\n$/, 'a command file ends with the END line')
+          const out = p.relativePath.replace(/\.sh$/, '.out')
+          files.set(out, p.content.includes('false') ? 'nope\n__RC__1\n' : `ran: ${p.content.split('\n')[0]}\n__RC__0\n`)
+          files.delete(p.relativePath)
+        }
         return { ok: true }
       case 'files.rename': {
         files.set(p.newRelativePath, files.get(p.oldRelativePath))
@@ -95,12 +101,13 @@ test('scan starts the helper once when there is no scan yet, then reads it', asy
 test('the helper runs queued commands and exits once the runner goes quiet', () => {
   const home = execFileSync('mktemp', ['-d']).toString().trim()
   const dir = `${home}/.orca-tmux/remote`
-  execFileSync('sh', ['-c', `mkdir -p ${dir}/cmd && printf 'echo hi' > ${dir}/cmd/a.sh && echo 'echo scanned' > ${dir}/scan.sh && touch ${dir}/alive`])
+  execFileSync('sh', ['-c', `mkdir -p ${dir}/cmd && printf 'echo hi\\n#__omux_end__\\n' > ${dir}/cmd/a.sh && printf 'echo half' > ${dir}/cmd/b.sh && echo 'echo scanned' > ${dir}/scan.sh && touch ${dir}/alive`])
   // Stop the loop after one pass by making "alive" stale in the second.
-  const script = helperScript(1).replace('sleep 0.5', `touch -t 200001010000 "$D/alive"; sleep 0.1`)
+  const script = helperScript(1).replace('sleep 0.2', `touch -t 200001010000 "$D/alive"; sleep 0.1`)
   execFileSync('sh', ['-c', script], { env: { ...process.env, HOME: home }, timeout: 10_000 })
   const out = execFileSync('cat', [`${dir}/cmd/a.out`, `${dir}/scan.out`]).toString()
   assert.match(out, /^hi\n__RC__0\nscanned\n__AT__\d+\n$/)
+  assert.equal(execFileSync('ls', [`${dir}/cmd`]).toString().trim(), 'a.out\nb.sh', 'a half-written command waits')
   execFileSync('rm', ['-rf', home])
 })
 
