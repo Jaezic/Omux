@@ -20,6 +20,9 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   workspace added to a session's group becomes a new tmux window there too, named after the
   workspace. Pick an agent in Orca's dialog and it starts inside that tmux window (`agentCommands`)
   instead of in an Orca terminal. Naming it `claude <name>` / `codex <name>` works too.
+- **Orca agent status**: each agent tab also gets Orca's in-band status record (the one its own
+  agent hooks produce), so Orca's send-to-agent picker, permission alerts, activity feed and agent
+  dashboard see tmux agents too. `statusBridge: false` turns it off.
 - **Waiting for approval**: the agent row shows what the agent asks to run (e.g.
   `claude - action required · npm publish · …`). Click it and answer in the tab (1 / Esc).
 - **Renaming a window's workspace** in Orca renames the tmux window (folder cards; the index

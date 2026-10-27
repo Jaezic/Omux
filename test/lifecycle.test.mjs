@@ -69,7 +69,7 @@ function fakeOrca() {
           orca.terminals.push({ handle, worktreeId: params.worktree.replace(/^id:/, ''), title: params.title })
           // The attach command ends with: _ '<session>' '<window>' '<pane>'
           const [, , windowId, paneId] = params.command.match(/_ '([^']*)' '([^']*)' '([^']*)'$/)
-          orca.views.set(paneId ? `orca-p${paneId.slice(1)}` : `orca-w${windowId.slice(1)}`, { attached: true })
+          orca.views.set(paneId ? `orca-p${paneId.slice(1)}` : `orca-w${windowId.slice(1)}`, { attached: true, tty: `/dev/ttys0${paneId?.slice(1) ?? 0}` })
           return { terminal: { handle } }
         }
         case 'terminal.closeTab':
@@ -508,4 +508,20 @@ test('a rename in tmux updates the workspace without renaming back', async () =>
   await engine.tick()
   assert.ok(!tmux.commands.some((c) => c.includes('rename-window')))
   assert.equal(orca.workspaces.find((f) => f.folderPath === '/tmp').name, '2 logs')
+})
+
+test('each agent tab gets Orca\'s in-band status, resent only on change', async () => {
+  const sends = () => tmux.commands.filter((c) => c.includes(']9999;'))
+  await engine.tick()
+  const first = sends().join('\n')
+  assert.match(first, /"state":"done","agentType":"claude".*> \/dev\/ttys01/)
+  assert.match(first, /"agentType":"codex".*> \/dev\/ttys02/)
+  tmux.commands = []
+  await engine.tick()
+  assert.equal(sends().length, 0, 'unchanged: nothing resent')
+  tmux.windows[0].panes[0].state = 'waiting'
+  tmux.windows[0].panes[0].ask = 'npm publish'
+  await engine.tick()
+  assert.equal(sends().length, 1)
+  assert.match(sends()[0], /"state":"waiting".*"toolName":"Bash","toolInput":"npm publish"/)
 })

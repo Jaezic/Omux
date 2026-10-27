@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 process.env.ORCA_TMUX_HOME = mkdtempSync(join(tmpdir(), 'omux-test-'))
 const { attachCommand } = await import('../lib/attach-command.mjs')
-const { idleAge, orcaTitle, windowTitle } = await import('../lib/sync.mjs')
+const { agentStatusPayload, idleAge, orcaTitle, windowTitle } = await import('../lib/sync.mjs')
 
 test('idleAge buckets idle time and stays empty otherwise', () => {
   const now = Date.now()
@@ -48,4 +48,10 @@ test('attachCommand is a single line and quotes untrusted session names', () => 
   assert.ok(cmd.endsWith(`'@4' '%12'`))
   assert.ok(cmd.includes('active-pane'), 'pane tabs get an independent active pane')
   assert.ok(cmd.includes('status off') && cmd.includes('bell-action none'))
+})
+
+test('agentStatusPayload maps tmux states to Orca agent status records', () => {
+  assert.deepEqual(agentStatusPayload({ agent: 'codex', state: 'working', since: 5 }), { state: 'working', agentType: 'codex', stateStartedAt: 5 })
+  assert.deepEqual(agentStatusPayload({ agent: 'claude', state: 'idle', since: 5 }), { state: 'done', agentType: 'claude', stateStartedAt: 5, turnCompletedAt: 5 })
+  assert.equal(agentStatusPayload({ agent: 'claude', state: 'waiting', since: 5, ask: 'Do you want to make this edit to a.ts?' }).toolName, undefined)
 })
