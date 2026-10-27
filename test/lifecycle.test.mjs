@@ -582,6 +582,7 @@ test('each agent tab gets Orca\'s in-band status, resent only on change', async 
   const first = sends().join('\n')
   assert.match(first, /"state":"done","agentType":"claude".*> \/dev\/ttys01/)
   assert.match(first, /"agentType":"codex".*> \/dev\/ttys02/)
+  assert.ok(!first.includes('\\007'), 'ST-terminated: no BEL that could ring as a terminal bell')
   tmux.commands = []
   await engine.tick()
   assert.equal(sends().length, 0, 'unchanged: nothing resent')
