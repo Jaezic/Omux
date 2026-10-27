@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 process.env.ORCA_TMUX_HOME = mkdtempSync(join(tmpdir(), 'omux-test-'))
 const { attachCommand } = await import('../lib/attach-command.mjs')
-const { agentStatusPayload, idleAge, orcaTitle, windowTitle } = await import('../lib/sync.mjs')
+const { agentStatusPayload, agentTask, cardName, idleAge, orcaTitle, windowTitle } = await import('../lib/sync.mjs')
 
 test('idleAge buckets idle time and stays empty otherwise', () => {
   const now = Date.now()
@@ -54,4 +54,27 @@ test('agentStatusPayload maps tmux states to Orca agent status records', () => {
   assert.deepEqual(agentStatusPayload({ agent: 'codex', state: 'working', since: 5 }), { state: 'working', agentType: 'codex', stateStartedAt: 5 })
   assert.deepEqual(agentStatusPayload({ agent: 'claude', state: 'idle', since: 5 }), { state: 'done', agentType: 'claude', stateStartedAt: 5, turnCompletedAt: 5 })
   assert.equal(agentStatusPayload({ agent: 'claude', state: 'waiting', since: 5, ask: 'Do you want to make this edit to a.ts?' }).toolName, undefined)
+})
+
+test('agentTask reads the task claude and codex put in their titles, not defaults', () => {
+  assert.equal(agentTask({ agent: 'claude', title: '✳ Fix login bug', hostShort: 'box' }), 'Fix login bug')
+  assert.equal(agentTask({ agent: 'claude', title: '⠂ Fix login bug' }), 'Fix login bug')
+  assert.equal(agentTask({ agent: 'codex', title: 'Review the API | backend', hostShort: 'box' }), 'Review the API')
+  assert.equal(agentTask({ agent: 'claude', title: '✳ Claude Code' }), '')
+  assert.equal(agentTask({ agent: 'codex', title: 'box', hostShort: 'box' }), '', "tmux's default title is the host name")
+})
+
+test('cardName keeps names people gave and replaces the ones tmux made up', () => {
+  const claude = { agent: 'claude', active: true, title: '✳ Tag the release' }
+  assert.equal(cardName({ index: 6, name: '2.1.303', autoName: true, panes: [claude] }), '6 Tag the release')
+  assert.equal(cardName({ index: 6, name: 'api', autoName: false, panes: [claude] }), '6 api', 'a chosen name stays')
+  assert.equal(cardName({ index: 2, name: '2.1.303', autoName: true, panes: [{ agent: 'claude', title: '✳ Claude Code' }] }), '2 claude')
+  assert.equal(cardName({ index: 3, name: 'zsh', autoName: true, panes: [{ agent: null, title: 'box' }] }), '3 zsh')
+})
+
+test('agentStatusPayload carries the task for Orca notifications and the dashboard', () => {
+  const done = agentStatusPayload({ agent: 'claude', state: 'idle', since: 5, title: '✳ Tag the release' })
+  assert.equal(done.prompt, 'Tag the release')
+  assert.equal(done.lastAssistantMessage, 'Tag the release', 'the notification body')
+  assert.equal(agentStatusPayload({ agent: 'claude', state: 'working', since: 5, title: '✳ Claude Code' }).prompt, undefined)
 })
