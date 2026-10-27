@@ -131,6 +131,9 @@ function fakeTmux(orca) {
         windows: [{ id: '@50', index: 1, name: 'zsh', path: '/home/me', panes: [{ id: '%50', index: 1, agent: null, state: null, title: 'zsh' }] }]
       })
     }
+    if (script.startsWith('ps -eo')) {
+      return tmux.ps ?? ''
+    }
     if (script.includes('-name .git -print')) {
       return tmux.nested.join('\n') + '\n'
     }
@@ -524,4 +527,15 @@ test('each agent tab gets Orca\'s in-band status, resent only on change', async 
   await engine.tick()
   assert.equal(sends().length, 1)
   assert.match(sends()[0], /"state":"waiting".*"toolName":"Bash","toolInput":"npm publish"/)
+})
+
+test('a conversation Orca resumed in a new tab continues in the tmux window', async () => {
+  tmux.ps = [
+    '10 1 3-00:00:00 /x/Orca Terminal Host.app/Contents/MacOS/Orca Terminal Host',
+    '11 10 00:09 -zsh',
+    '12 11 00:08 claude --resume 0b5d7a2e-1111-4222-8333-944455556666'
+  ].join('\n')
+  plusTab([' ▐▛███▛█   Claude Code v2.1.310'], 'resumed')
+  await settle()
+  assert.match(tmux.commands.find((c) => c.includes('send-keys')), /-l 'claude --resume 0b5d7a2e-1111-4222-8333-944455556666'/)
 })

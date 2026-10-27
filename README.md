@@ -20,6 +20,8 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   workspace added to a session's group becomes a new tmux window there too, named after the
   workspace. Pick an agent in Orca's dialog and it starts inside that tmux window (`agentCommands`)
   instead of in an Orca terminal. Naming it `claude <name>` / `codex <name>` works too.
+- **Resuming from Orca's session history** opens the conversation in a tab; it moves into a new
+  tmux window and the same conversation continues there (`--resume <id>` / `resume <id>` carried over).
 - **Orca agent status**: each agent tab also gets Orca's in-band status record (the one its own
   agent hooks produce), so Orca's send-to-agent picker, permission alerts, activity feed and agent
   dashboard see tmux agents too. `statusBridge: false` turns it off.

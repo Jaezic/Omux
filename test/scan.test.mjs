@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { execFileSync } from 'node:child_process'
-import { ASK_AWK, classifyCommand, parseDoneStamp, parseScan } from '../lib/scan.mjs'
+import { ASK_AWK, classifyCommand, findOrcaAgentArgs, parseDoneStamp, parseScan, resumeArgs } from '../lib/scan.mjs'
 
 const SEP = '|#|'
 const pane = (session, windowId, index, name, paneId, paneIndex, active, pid, path, title) =>
@@ -110,4 +110,28 @@ test('ASK_AWK finds the command on claude and codex approval screens', () => {
   assert.equal(ask(claude), 'touch /tmp/a.txt')
   assert.equal(ask(codex), 'touch /tmp/b.txt')
   assert.equal(ask(edit), 'Do you want to make this edit to app.ts?')
+})
+
+test('findOrcaAgentArgs picks the newest agent in an Orca terminal, not one in tmux', () => {
+  const ps = [
+    '10 1 3-00:00:00 /Applications/Orca.app/Contents/Frameworks/Orca Terminal Host.app/Contents/MacOS/Orca Terminal Host',
+    '11 10 00:20 -zsh',
+    '12 11 00:15 claude --resume 0b5d7a2e-1111-4222-8333-944455556666',
+    '20 1 5-00:00:00 tmux new-session -d',
+    '21 20 00:05 -zsh',
+    '22 21 00:03 claude --resume ffffffff-0000-0000-0000-000000000000',
+    '13 11 20:00 claude --continue'
+  ].join('\n')
+  assert.equal(findOrcaAgentArgs(ps, 'claude'), 'claude --resume 0b5d7a2e-1111-4222-8333-944455556666')
+  assert.equal(findOrcaAgentArgs(ps, 'codex'), null)
+})
+
+test('resumeArgs keeps only the resume part of an agent command line', () => {
+  assert.equal(resumeArgs('claude', 'claude --resume 0b5d7a2e-1111 --model x'), '--resume 0b5d7a2e-1111')
+  assert.equal(resumeArgs('claude', '/u/bin/claude -r=abcdef123456'), '--resume abcdef123456')
+  assert.equal(resumeArgs('claude', 'claude --continue'), '--continue')
+  assert.equal(resumeArgs('claude', 'claude fix the login bug'), '')
+  assert.equal(resumeArgs('codex', 'node /opt/homebrew/bin/codex resume 019a2b3c-4d5e'), 'resume 019a2b3c-4d5e')
+  assert.equal(resumeArgs('codex', 'codex resume --last'), 'resume --last')
+  assert.equal(resumeArgs('codex', 'codex'), '')
 })
