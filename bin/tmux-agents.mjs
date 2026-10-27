@@ -36,6 +36,7 @@ if (command === 'scan') {
   const bridge = createOrcaBridge({ env, log: console.log })
   const engine = createSyncEngine({ cli: createOrcaCli({ env }), bridge, env, log: console.log })
   await engine.tick()
+  await engine.settled()
   bridge.close()
 } else if (command === 'watch') {
   const log = (message) => console.log(`${new Date().toISOString()} ${message}`)
