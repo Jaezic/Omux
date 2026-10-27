@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 process.env.ORCA_TMUX_HOME = mkdtempSync(join(tmpdir(), 'omux-test-'))
 const { attachCommand } = await import('../lib/attach-command.mjs')
-const { agentStatusPayload, agentTask, cardName, idleAge, orcaTitle, stateAge, windowTitle } = await import('../lib/sync.mjs')
+const { agentStatusPayload, agentTask, branchIssue, cardName, hostMark, idleAge, orcaTitle, stateAge, windowTitle } = await import('../lib/sync.mjs')
 
 test('idleAge buckets idle time and stays empty otherwise', () => {
   const now = Date.now()
@@ -85,4 +85,21 @@ test('stateAge counts working and waiting time too; idleAge only idle time', () 
   assert.equal(stateAge(working, now), '10m')
   assert.equal(idleAge(working, now), '')
   assert.equal(stateAge({ state: 'waiting', since: now - 2 * 60_000 }, now), '2m')
+})
+
+test('SSH hosts get a colored dot on their cards; local stays plain', () => {
+  assert.equal(hostMark('local'), '')
+  assert.match(hostMark('superb-spark'), /^\p{Extended_Pictographic}$/u)
+  assert.equal(hostMark('superb-spark'), hostMark('superb-spark'), 'stable per host')
+  assert.equal(hostMark('box', { hostColors: { box: '🟢' } }), '🟢')
+  assert.equal(hostMark('box', { hostMarks: false }), '')
+  assert.equal(cardName({ index: 2, name: 'api', panes: [] }, '🟢'), '🟢 2 api')
+})
+
+test('branchIssue finds a Linear key in a branch name', () => {
+  assert.equal(branchIssue('refs/heads/mgjeong/sva-1593-fix-timing'), 'SVA-1593')
+  assert.equal(branchIssue('SVA-12'), 'SVA-12')
+  assert.equal(branchIssue('refs/heads/main'), null)
+  assert.equal(branchIssue('release-2024'), 'RELEASE-2024', 'only a candidate: linking checks it exists in Linear')
+  assert.equal(branchIssue('refs/heads/feature/x1'), null)
 })

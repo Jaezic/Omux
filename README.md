@@ -36,6 +36,14 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   the `<host> · ` prefix) renames the session.
 - **"+" on a git card** keeps the new tab where it is: its shell becomes the new window's view.
   On a folder card (one window each) the new window gets its own card.
+- **SSH host cards** start with a colored dot per host (🔵 🟣 🟢 …) so hosts tell apart in a status
+  lane. Orca refuses tab colors from outside while its window is open, so the dot is on the card.
+  `hostColors` picks them (`{ "<host>": "🟢" }`), `hostMarks: false` turns them off.
+- **Linear**: a git card whose branch names an issue (`…/sva-1593-…`) is linked to it once, when
+  Orca is connected to Linear and the issue exists. Unlinking it sticks.
+- **Shared git cards** list their windows in the card's note; a note you write is left alone.
+- **Ports**: Orca itself shows dev-server ports on local git cards, tmux ones included. It has no
+  port display for folder or SSH workspaces.
 - **Notifications**: Orca's completion notification names the card and carries the agent's task.
 - **A group added in Orca** as `<host> · <name>` (e.g. `local · api`) becomes a new tmux session.
   Removing a group never kills a session.
