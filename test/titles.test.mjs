@@ -103,3 +103,15 @@ test('branchIssue finds a Linear key in a branch name', () => {
   assert.equal(branchIssue('release-2024'), 'RELEASE-2024', 'only a candidate: linking checks it exists in Linear')
   assert.equal(branchIssue('refs/heads/feature/x1'), null)
 })
+
+test('readRuntimeId reads the id of a running Orca, and null once its process is gone', async () => {
+  const { readRuntimeId } = await import('../lib/orca-cli.mjs')
+  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const file = `${mkdtempSync(`${tmpdir()}/omux-rt-`)}/orca-runtime.json`
+  writeFileSync(file, JSON.stringify({ runtimeId: 'rt-1', pid: process.pid }))
+  assert.equal(readRuntimeId(file), 'rt-1')
+  writeFileSync(file, JSON.stringify({ runtimeId: 'rt-1', pid: 2 ** 22 + 12345 }))
+  assert.equal(readRuntimeId(file), null)
+  assert.equal(readRuntimeId(`${file}.missing`), null)
+})
