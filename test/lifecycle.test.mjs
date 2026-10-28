@@ -401,8 +401,14 @@ test('cd out of a repo moves the window to a folder workspace and drops the unus
   assert.deepEqual(tmux.kills(), [], 'moving cards never kills')
   assert.ok(orca.workspaces.some((f) => f.name === '1 work' && f.folderPath === '/elsewhere'))
   mock.timers.tick(121_000)
+  const calls = []
+  const call = orca.bridge.call
+  orca.bridge.call = (env, method, params) => (calls.push([method, params]), call(env, method, params))
   await engine.tick()
   assert.equal(orca.repos.length, 0, 'the card this tool added is unregistered once unused')
+  // Archived first: Orca's sidebar keeps a project removed through the runtime as a dead row.
+  const archive = calls.findIndex(([m, p]) => m === 'worktree.set' && p.isArchived === true && p.worktree.endsWith('::/repo'))
+  assert.ok(archive >= 0 && archive < calls.findIndex(([m]) => m === 'repo.rm'))
 })
 
 // --- changed repos nested in a non-git window's folder -----------------------------------
