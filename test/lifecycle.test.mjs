@@ -824,3 +824,29 @@ test('a "+" card is created under its window\'s name (next number, the shell), n
   assert.equal(calls.find(([m]) => m === 'folderWorkspace.create')[1].name, '3 zsh')
   assert.ok(!calls.some(([m, p]) => m === 'folderWorkspace.update' && p.updates.name), 'no rename')
 })
+
+test('after an Orca restart the tabs are recreated all at once, not one after another', async () => {
+  await settle()
+  orca.terminals = []
+  for (const v of orca.views.keys()) {
+    orca.views.set(v, { attached: false })
+  }
+  orca.runtimeId = 'run-2'
+  mock.timers.tick(31_000)
+  let inFlight = 0
+  let most = 0
+  const call = orca.bridge.call
+  orca.bridge.call = async (env, method, params) => {
+    if (method !== 'terminal.create') {
+      return call(env, method, params)
+    }
+    most = Math.max(most, ++inFlight)
+    await new Promise((r) => setImmediate(r))
+    inFlight--
+    return call(env, method, params)
+  }
+  await settle()
+  await settle()
+  assert.equal(orca.terminals.length, 3)
+  assert.ok(most > 1, `created concurrently (at most ${most} at once)`)
+})
