@@ -28,13 +28,14 @@ test('the title hook fires on busy/idle changes only, and never runs the title a
     execFileSync('sh', ['-c', hookScript(trigger)], { env })
     const pane = tmux('list-panes', '-t', 't', '-F', '#{pane_id}')
     const fires = []
-    for (const title of ['✳ idle', '⠋ work', '⠙ work', '⠹ work', `✳ $(touch ${join(dir, 'pwned')})`, '✳ still idle']) {
+    for (const title of ['myhost', '✳ idle', '⠋ work', '⠙ work', '⠹ work', `✳ $(touch ${join(dir, 'pwned')})`, '✳ still idle', 'task | proj']) {
       rmSync(trigger, { force: true })
       tmux('select-pane', '-t', pane, '-T', title)
       await wait(150)
       fires.push(existsSync(trigger))
     }
-    assert.deepEqual(fires, [true, true, false, false, true, false])
+    // A claude starting (host name → "✳ …") fires too; codex going idle ("task | proj") as well.
+    assert.deepEqual(fires, [true, true, true, false, false, true, false, true])
     assert.ok(!existsSync(join(dir, 'pwned')), 'the title is not run by a shell')
   } finally {
     try {
