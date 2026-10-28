@@ -44,3 +44,27 @@ test('the title hook fires on busy/idle changes only, and never runs the title a
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('the scan script finds a working agent on a real tmux server', { skip: !hasTmux }, async () => {
+  const { SCAN_SCRIPT, parseScan } = await import('../lib/scan.mjs')
+  const { symlinkSync } = await import('node:fs')
+  const dir = mkdtempSync(join(tmpdir(), 'omux-scan-'))
+  const env = { ...process.env, TMUX_TMPDIR: dir, TMUX: '', HOME: dir }
+  const tmux = (...args) => execFileSync('tmux', args, { env }).toString().trim()
+  // A stand-in agent: a process named "claude" showing claude's working line.
+  const agent = join(dir, 'claude')
+  symlinkSync('/bin/sleep', agent) // a copied system binary is killed on macOS; a link runs
+  try {
+    tmux('new-session', '-d', '-s', 's', '-x', '100', '-y', '20', `printf '✻ Thinking… (3s · esc to interrupt)\\n'; exec ${agent} 30`)
+    tmux('split-window', '-d', '-t', 's', 'sleep 30')
+    await new Promise((r) => setTimeout(r, 300))
+    const scan = parseScan('local', execFileSync('sh', ['-c', SCAN_SCRIPT], { env }).toString())
+    const panes = scan.sessions.flatMap((s) => s.windows.flatMap((w) => w.panes))
+    assert.deepEqual(panes.map((p) => [p.agent, p.state]).sort(), [['claude', 'working'], [null, null]].sort())
+  } finally {
+    try {
+      tmux('kill-server')
+    } catch {}
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
