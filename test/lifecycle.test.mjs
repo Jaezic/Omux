@@ -794,3 +794,19 @@ test('bookkeeping of gone panes and cards is dropped from the state file', async
   assert.ok(!Object.keys(saved().panes).some((k) => k.endsWith('/%2')), 'pane gone')
   assert.equal(Object.keys(saved().cards).length, cards - 1, 'the card of the closed window is gone')
 })
+
+test('one empty scan (a tmux hiccup) removes nothing; a second one in a row does', async () => {
+  await settle()
+  const cards = orca.workspaces.length
+  const windows = tmux.windows
+  tmux.windows = []
+  await engine.tick()
+  assert.equal(orca.workspaces.length, cards, 'kept after one empty scan')
+  tmux.windows = windows
+  await engine.tick()
+  tmux.windows = []
+  await engine.tick()
+  assert.equal(orca.workspaces.length, cards, 'a hiccup between good scans is still ignored')
+  await engine.tick()
+  assert.ok(orca.workspaces.length < cards, 'removed once two scans in a row agree')
+})
