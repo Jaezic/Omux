@@ -903,3 +903,25 @@ test('a host that stops syncing is reported once after 3 minutes, again only aft
   await engine.tick()
   assert.equal(engine.health().local.error, null)
 })
+
+test('each tab\'s view gets a focus hook once (window and pane picked in the user\'s session)', async () => {
+  await settle()
+  const hooks = () => tmux.commands.filter((c) => c.includes('client-focus-in'))
+  const all = hooks().join('\n')
+  assert.match(all, /set-hook -t 'orca-p1' client-focus-in 'select-pane -t %1 ; run-shell -b '\\''tmux select-window -t =0:@1'\\'' ; run-shell -b '\\''tmux select-pane -t %1'\\'''/)
+  assert.match(all, /set-hook -t 'orca-w2' client-focus-in/)
+  tmux.commands = []
+  await engine.tick()
+  assert.equal(hooks().length, 0, 'not again for the same view')
+})
+
+test('a pane picked inside an Orca pane tab brings that pane\'s tab forward', async () => {
+  await settle()
+  const { writeFileSync } = await import('node:fs')
+  writeFileSync(join(process.env.ORCA_TMUX_HOME, 'focus'), 'orca-p1 %2\n')
+  await engine.focusFromTmux()
+  assert.deepEqual(orca.focused, [handleOf('codex')])
+  writeFileSync(join(process.env.ORCA_TMUX_HOME, 'focus'), 'orca-p1 %1\n')
+  await engine.focusFromTmux()
+  assert.equal(orca.focused.length, 1, 'its own pane: nothing to switch')
+})
