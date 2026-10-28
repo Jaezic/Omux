@@ -74,7 +74,7 @@ Orca release could change them.
 ## Run
 
 ```sh
-bin/install.sh          # launchd agent: runs at login, log in ~/.orca-tmux/runner.log
+bin/install.sh          # launchd agent: runs at login, log in ~/.orca-tmux/runner.log (repeats summed up, kept under 1 MB)
 bin/install.sh -u       # remove it
 node bin/tmux-agents.mjs scan [host...]   # print the inventory
 node bin/tmux-agents.mjs watch            # run the loop in the foreground

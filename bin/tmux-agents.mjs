@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // Runner outside Orca: `watch` is the launchd loop, `scan` prints the inventory, `sync` reconciles once.
 import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { createLog } from '../lib/log.mjs'
 import { startLoop } from '../lib/loop.mjs'
 import { createOrcaBridge } from '../lib/orca-bridge.mjs'
 import { createOrcaCli } from '../lib/orca-cli.mjs'
@@ -39,7 +42,7 @@ if (command === 'scan') {
   await engine.settled()
   bridge.close()
 } else if (command === 'watch') {
-  const log = (message) => console.log(`${new Date().toISOString()} ${message}`)
+  const log = createLog({ path: join(process.env.ORCA_TMUX_HOME || join(homedir(), '.orca-tmux'), 'runner.log') })
   const notify = async (title, body) => {
     const quote = (text) => JSON.stringify(String(text))
     execFile('osascript', ['-e', `display notification ${quote(body)} with title ${quote(title)}`], () => {})
