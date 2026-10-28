@@ -4,9 +4,10 @@ import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createLog } from '../lib/log.mjs'
-import { startLoop } from '../lib/loop.mjs'
+import { doctorReport, gatherFacts } from '../lib/doctor.mjs'
+import { lockOwner, startLoop } from '../lib/loop.mjs'
 import { createOrcaBridge } from '../lib/orca-bridge.mjs'
-import { createOrcaCli } from '../lib/orca-cli.mjs'
+import { createOrcaCli, readRuntimeId } from '../lib/orca-cli.mjs'
 import { resolveHosts } from '../lib/hosts.mjs'
 import { scanHost } from '../lib/scan.mjs'
 import { createSyncEngine, loadConfig, windowTitle } from '../lib/sync.mjs'
@@ -41,6 +42,11 @@ if (command === 'scan') {
   await engine.tick()
   await engine.settled()
   bridge.close()
+} else if (command === 'doctor') {
+  const root = process.env.ORCA_TMUX_HOME || join(homedir(), '.orca-tmux')
+  const { ok, lines } = doctorReport(gatherFacts({ root, runnerPid: lockOwner(), orcaRunning: readRuntimeId() !== null, env }))
+  console.log(lines.join('\n'))
+  process.exitCode = ok ? 0 : 1
 } else if (command === 'watch') {
   const log = createLog({ path: join(process.env.ORCA_TMUX_HOME || join(homedir(), '.orca-tmux'), 'runner.log') })
   const notify = async (title, body) => {
@@ -60,6 +66,6 @@ if (command === 'scan') {
     })
   }
 } else {
-  console.error('usage: tmux-agents.mjs watch | scan [host...] | sync')
+  console.error('usage: tmux-agents.mjs watch | scan [host...] | sync | doctor')
   process.exit(2)
 }
