@@ -850,3 +850,30 @@ test('after an Orca restart the tabs are recreated all at once, not one after an
   assert.equal(orca.terminals.length, 3)
   assert.ok(most > 1, `created concurrently (at most ${most} at once)`)
 })
+
+test('a finished turn reaches Orca before the pass\'s slower card work is done', async () => {
+  await settle()
+  let release
+  const gate = new Promise((r) => (release = r))
+  const call = orca.bridge.call
+  orca.bridge.call = async (env, method, params) => {
+    if (method === 'folderWorkspace.update' || method === 'worktree.set') {
+      await gate // card work stuck behind a slow Orca
+    }
+    return call(env, method, params)
+  }
+  tmux.commands = []
+  tmux.windows[0].panes[0].message = 'all done'
+  mock.timers.tick(2 * 3600_000) // idle ages and lanes change: card updates are due
+  const pass = engine.tick()
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r))
+  assert.ok(tmux.commands.some((c) => c.includes('"lastAssistantMessage":"all done"')), 'status already written')
+  release()
+  await pass
+})
+
+test('folder cards get lastActivityAt too, so Orca\'s Recent sort follows agent activity', async () => {
+  await settle()
+  const fw = orca.workspaces.find((f) => f.folderPath === '/repo')
+  assert.ok(fw?.lastActivityAt > 0)
+})
