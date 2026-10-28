@@ -883,3 +883,23 @@ test('folder cards get lastActivityAt too, so Orca\'s Recent sort follows agent 
   const fw = orca.workspaces.find((f) => f.folderPath === '/repo')
   assert.ok(fw?.lastActivityAt > 0)
 })
+
+test('a host that stops syncing is reported once after 3 minutes, again only after recovering', async () => {
+  const notes = []
+  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run, notify: async (title, body) => notes.push(body) })
+  await engine.tick()
+  const scan = tmux.scan
+  tmux.scan = async () => {
+    throw new Error('no server running')
+  }
+  for (let i = 0; i < 5; i++) {
+    mock.timers.tick(60_000)
+    await engine.tick()
+  }
+  assert.equal(notes.length, 1)
+  assert.match(notes[0], /로컬 tmux 동기화가 멈췄어요: no server running/)
+  assert.equal(engine.health().local.error, 'no server running')
+  tmux.scan = scan
+  await engine.tick()
+  assert.equal(engine.health().local.error, null)
+})

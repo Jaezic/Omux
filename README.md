@@ -78,8 +78,12 @@ bin/install.sh          # launchd agent: runs at login, log in ~/.orca-tmux/runn
 bin/install.sh -u       # remove it
 node bin/tmux-agents.mjs scan [host...]   # print the inventory
 node bin/tmux-agents.mjs watch            # run the loop in the foreground
+node bin/tmux-agents.mjs doctor           # health check: runner, Orca, tmux hooks, each host's last good scan
 npm test                                  # unit tests (fake Orca + fake tmux; never touch real ones)
 ```
+
+A host that has not synced for 3 minutes (relay helper stuck, tmux gone) is reported once as a
+notification (`healthAlerts: false` turns that off) and in the log, until it recovers.
 
 Optional Orca plugin (commands/keybindings, and runs the loop itself if launchd isn't):
 Settings → Plugins → enable the experimental plugin system, then add this folder under
