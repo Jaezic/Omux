@@ -135,3 +135,11 @@ test('a helper from an older version is replaced once per run', async () => {
   assert.notEqual(orca.files.get('.orca-tmux/remote/helper.sh'), 'old helper')
   assert.equal((await next.scan('h')).home, '/home/me')
 })
+
+test('a command that gets no answer restarts a stuck helper, and an error does not hide that it is stale', async () => {
+  const orca = fakeOrca({ helperRunning: false })
+  const relay = createRelay({ rpc: orca.rpc, state: {} })
+  await assert.rejects(relay.exec('h', 'tmux -V', 300), /timed out/)
+  assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, 1, 'restarted after no answer')
+  assert.ok(helperScript().includes('$T sh "$f"'), 'commands run under timeout(1) where it exists')
+})
