@@ -598,6 +598,19 @@ test('each agent tab gets Orca\'s in-band status, resent only on change', async 
   assert.match(sends()[0], /"state":"waiting".*"toolName":"Bash","toolInput":"npm publish"/)
 })
 
+test('a turn that finishes between two scans still counts as a new completion', async () => {
+  const sends = () => tmux.commands.filter((c) => c.includes(']9999;'))
+  const pane = tmux.windows[0].panes[0]
+  pane.message = 'first answer'
+  await engine.tick()
+  mock.timers.tick(2 * 3600_000)
+  tmux.commands = []
+  pane.message = 'quick answer' // never seen "working"
+  await engine.tick()
+  assert.equal(sends().length, 1)
+  assert.match(sends()[0], new RegExp(`"state":"done".*"turnCompletedAt":${Date.now()}.*"lastAssistantMessage":"quick answer"`))
+})
+
 test('a conversation Orca resumed in a new tab continues in the tmux window', async () => {
   tmux.ps = [
     '10 1 3-00:00:00 /x/Orca Terminal Host.app/Contents/MacOS/Orca Terminal Host',
