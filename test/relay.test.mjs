@@ -194,3 +194,12 @@ test('a helper starting drops commands left from before; a command not run in ti
   await assert.rejects(relay.exec('h', 'tmux -V', 300), /timed out/)
   assert.ok(![...orca.files.keys()].some((k) => k.includes('/cmd/')), 'its command file is gone')
 })
+
+test('peek reads the focus file a tmux hook wrote, once the host is known', async () => {
+  const orca = fakeOrca()
+  const relay = createRelay({ rpc: orca.rpc, state: {} })
+  assert.equal(await relay.peek('h', 'focus'), null)
+  await relay.exec('h', 'tmux -V')
+  orca.files.set('.orca-tmux/remote/focus', 'orca-p3 %7\n')
+  assert.equal(await relay.peek('h', 'focus'), 'orca-p3 %7\n')
+})
