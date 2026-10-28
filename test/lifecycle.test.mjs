@@ -904,8 +904,15 @@ test('a host that stops syncing is reported once after 3 minutes, again only aft
   assert.equal(engine.health().local.error, null)
 })
 
-test('each tab\'s view gets a focus hook once (window and pane picked in the user\'s session)', async () => {
+test('focus hooks are off unless focusSync is set; then each view gets one once', async () => {
+  const { writeFileSync, rmSync: rm } = await import('node:fs')
   await settle()
+  assert.equal(tmux.commands.filter((c) => c.includes('client-focus-in')).length, 0, 'off by default')
+  const config = join(process.env.ORCA_TMUX_HOME, 'config.json')
+  writeFileSync(config, JSON.stringify({ focusSync: true }))
+  try {
+  engine.reopenDismissed() // a full pass (nothing else changed)
+  await engine.tick()
   const hooks = () => tmux.commands.filter((c) => c.includes('client-focus-in'))
   const all = hooks().join('\n')
   assert.match(all, /set-hook -t 'orca-p1' client-focus-in 'select-pane -t %1 ; run-shell -b '\\''tmux select-window -t =0:@1'\\'' ; run-shell -b '\\''tmux select-pane -t %1'\\'''/)
@@ -913,6 +920,20 @@ test('each tab\'s view gets a focus hook once (window and pane picked in the use
   tmux.commands = []
   await engine.tick()
   assert.equal(hooks().length, 0, 'not again for the same view')
+  } finally {
+    rm(config, { force: true })
+  }
+})
+
+test('an agent whose last answer was unknown (empty) is not taken as having finished a turn', async () => {
+  const pane = tmux.windows[0].panes[0]
+  pane.message = ''
+  await engine.tick()
+  mock.timers.tick(2 * 3600_000)
+  tmux.commands = []
+  pane.message = 'an old answer, now readable'
+  await engine.tick()
+  assert.ok(!tmux.commands.some((c) => c.includes(`"turnCompletedAt":${Date.now()}`)), 'not a turn finished now')
 })
 
 test('a pane picked inside an Orca pane tab brings that pane\'s tab forward', async () => {
