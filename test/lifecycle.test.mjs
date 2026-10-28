@@ -2,7 +2,7 @@
 // window/pane is the user closing exactly one tab while the session's other tabs live on.
 import assert from 'node:assert/strict'
 import { beforeEach, mock, test } from 'node:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -772,4 +772,25 @@ test('a removed card over a working agent only hides it, and stays hidden after 
   engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run, log: process.env.OMUX_TEST_LOG ? console.log : undefined })
   await settle()
   assert.ok(!orca.workspaces.some((w) => w.folderPath === '/solo'), 'the card does not come back')
+})
+
+test('a "+" tab closed before it settled does not keep asking for passes every second', async () => {
+  plusTab(undefined)
+  assert.equal((await engine.tick()).soon, true)
+  orca.terminals = orca.terminals.filter((t) => t.handle !== 'plus')
+  await engine.tick()
+  mock.timers.tick(5_000)
+  assert.equal((await engine.tick()).soon, false)
+})
+
+test('bookkeeping of gone panes and cards is dropped from the state file', async () => {
+  await settle()
+  const saved = () => JSON.parse(readFileSync(join(process.env.ORCA_TMUX_HOME, 'state.json'), 'utf8'))
+  assert.ok(Object.keys(saved().panes).some((k) => k.endsWith('/%2')))
+  const cards = Object.keys(saved().cards).length
+  tmux.windows[0].panes.pop() // codex %2 exits
+  tmux.windows = tmux.windows.slice(0, 1) // window @2 closed
+  await settle()
+  assert.ok(!Object.keys(saved().panes).some((k) => k.endsWith('/%2')), 'pane gone')
+  assert.equal(Object.keys(saved().cards).length, cards - 1, 'the card of the closed window is gone')
 })
