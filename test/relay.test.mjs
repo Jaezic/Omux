@@ -143,3 +143,22 @@ test('a command that gets no answer restarts a stuck helper, and an error does n
   assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, 1, 'restarted after no answer')
   assert.ok(helperScript().includes('$T sh "$f"'), 'commands run under timeout(1) where it exists')
 })
+
+test('a scan a hook asked for bumps the "changed" counter; a periodic one does not', async () => {
+  const home = execFileSync('mktemp', ['-d']).toString().trim()
+  const dir = `${home}/.orca-tmux/remote`
+  const run = (setup) => {
+    execFileSync('sh', ['-c', `mkdir -p ${dir}/cmd && echo 'echo scanned' > ${dir}/scan.sh && touch ${dir}/alive ${setup}`])
+    const script = helperScript(1).replace('sleep 0.2', `touch -t 200001010000 "$D/alive"; sleep 0.1`)
+    execFileSync('sh', ['-c', script], { env: { ...process.env, HOME: home }, timeout: 10_000 })
+  }
+  run('')
+  assert.throws(() => execFileSync('cat', [`${dir}/changed`], { stdio: 'pipe' }), 'periodic scan: no counter')
+  run(`${dir}/trigger`)
+  assert.equal(execFileSync('cat', [`${dir}/changed`]).toString().trim(), '1')
+  const orca = fakeOrca()
+  const relay = createRelay({ rpc: orca.rpc, state: {} })
+  assert.equal(await relay.peek('h'), null, 'peek sets nothing up for an unknown host')
+  assert.ok(!orca.calls.includes('folderWorkspace.create'))
+  execFileSync('rm', ['-rf', home])
+})
