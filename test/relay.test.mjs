@@ -101,9 +101,11 @@ test('scan starts the helper once when there is no scan yet, then reads it', asy
 test('the helper runs queued commands and exits once the runner goes quiet', () => {
   const home = execFileSync('mktemp', ['-d']).toString().trim()
   const dir = `${home}/.orca-tmux/remote`
-  execFileSync('sh', ['-c', `mkdir -p ${dir}/cmd && printf 'echo hi\\n#__omux_end__\\n' > ${dir}/cmd/a.sh && printf 'echo half' > ${dir}/cmd/b.sh && echo 'echo scanned' > ${dir}/scan.sh && touch ${dir}/alive`])
-  // Stop the loop after one pass by making "alive" stale in the second.
-  const script = helperScript(1).replace('sleep 0.2', `touch -t 200001010000 "$D/alive"; sleep 0.1`)
+  execFileSync('sh', ['-c', `mkdir -p ${dir}/cmd && echo 'echo scanned' > ${dir}/scan.sh && touch ${dir}/alive`])
+  // Commands queued once the helper runs (it drops older ones); one pass, then "alive" goes stale.
+  const script = helperScript(1)
+    .replace('while :; do', `printf 'echo hi\\n#__omux_end__\\n' > "$D/cmd/a.sh"; printf 'echo half' > "$D/cmd/b.sh"\nwhile :; do`)
+    .replace('sleep 0.2', `touch -t 200001010000 "$D/alive"; sleep 0.1`)
   execFileSync('sh', ['-c', script], { env: { ...process.env, HOME: home }, timeout: 10_000 })
   const out = execFileSync('cat', [`${dir}/cmd/a.out`, `${dir}/scan.out`]).toString()
   assert.match(out, /^hi\n__RC__0\nscanned\n__SUM__\d+\n__AT__\d+\n$/)
@@ -177,4 +179,18 @@ test('an unchanged scan (same checksum in scan.stamp) is not fetched again', asy
   orca.files.set('.orca-tmux/remote/scan.stamp', `${now + 3} 42\n`)
   assert.equal((await relay.scan('h')).home, '/home/me')
   assert.equal(reads() - before, 1, 'only the stamp was read')
+})
+
+test('a helper starting drops commands left from before; a command not run in time is taken back', async () => {
+  const home = execFileSync('mktemp', ['-d']).toString().trim()
+  const dir = `${home}/.orca-tmux/remote`
+  execFileSync('sh', ['-c', `mkdir -p ${dir}/cmd && printf 'touch ${dir}/ran\\n#__omux_end__\\n' > ${dir}/cmd/old.sh && echo true > ${dir}/scan.sh && touch ${dir}/alive`])
+  const script = helperScript(1).replace('sleep 0.2', `touch -t 200001010000 "$D/alive"; sleep 0.1`)
+  execFileSync('sh', ['-c', script], { env: { ...process.env, HOME: home }, timeout: 10_000 })
+  assert.throws(() => execFileSync('ls', [`${dir}/ran`], { stdio: 'pipe' }), 'the stale command did not run')
+  execFileSync('rm', ['-rf', home])
+  const orca = fakeOrca({ helperRunning: false })
+  const relay = createRelay({ rpc: orca.rpc, state: {} })
+  await assert.rejects(relay.exec('h', 'tmux -V', 300), /timed out/)
+  assert.ok(![...orca.files.keys()].some((k) => k.includes('/cmd/')), 'its command file is gone')
 })
