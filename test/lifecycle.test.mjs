@@ -810,3 +810,17 @@ test('one empty scan (a tmux hiccup) removes nothing; a second one in a row does
   await engine.tick()
   assert.ok(orca.workspaces.length < cards, 'removed once two scans in a row agree')
 })
+
+test('a "+" card is created under its window\'s name (next number, the shell), not renamed after', async () => {
+  const shell = process.env.SHELL
+  process.env.SHELL = '/bin/zsh'
+  const calls = []
+  const call = orca.bridge.call
+  orca.bridge.call = (env, method, params) => (calls.push([method, params]), call(env, method, params))
+  plusTab(undefined)
+  await engine.tick()
+  process.env.SHELL = shell
+  assert.ok(tmux.commands.some((c) => c.includes("-t '=0:3'")), 'opened at the number the card was named for')
+  assert.equal(calls.find(([m]) => m === 'folderWorkspace.create')[1].name, '3 zsh')
+  assert.ok(!calls.some(([m, p]) => m === 'folderWorkspace.update' && p.updates.name), 'no rename')
+})
