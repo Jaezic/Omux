@@ -82,7 +82,7 @@ node bin/tmux-agents.mjs doctor           # health check: runner, Orca, tmux hoo
 npm test                                  # unit tests (fake Orca + fake tmux; never touch real ones)
 ```
 
-Focus follows both ways: clicking an Orca tab makes its window current and its pane active in your
+With `focusSync: true` in config.json (off by default), focus follows both ways: clicking an Orca tab makes its window current and its pane active in your
 own tmux session (the tab's view gets a `client-focus-in` hook; tmux's `focus-events` must be on),
 and picking another pane inside an Orca pane tab (click or keys) switches Orca to that pane's tab
 (on SSH hosts too, within half a second).
