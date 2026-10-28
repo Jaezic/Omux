@@ -84,7 +84,8 @@ npm test                                  # unit tests (fake Orca + fake tmux; n
 
 Focus follows both ways: clicking an Orca tab makes its window current and its pane active in your
 own tmux session (the tab's view gets a `client-focus-in` hook; tmux's `focus-events` must be on),
-and picking another pane inside an Orca pane tab (click or keys) switches Orca to that pane's tab.
+and picking another pane inside an Orca pane tab (click or keys) switches Orca to that pane's tab
+(on SSH hosts too, within half a second).
 
 A host that has not synced for 3 minutes (relay helper stuck, tmux gone) is reported once as a
 notification (`healthAlerts: false` turns that off) and in the log, until it recovers.
