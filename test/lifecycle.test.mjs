@@ -946,3 +946,13 @@ test('a pane picked inside an Orca pane tab brings that pane\'s tab forward', as
   await engine.focusFromTmux()
   assert.equal(orca.focused.length, 1, 'its own pane: nothing to switch')
 })
+
+test('terminal listings leave out the visual layouts (a third of the payload, unused here)', async () => {
+  const params = []
+  const call = orca.bridge.call
+  orca.bridge.call = (env, method, p) => (method === 'terminal.list' && params.push(p), call(env, method, p))
+  await settle()
+  await engine.probe()
+  assert.ok(params.length > 1)
+  assert.ok(params.every((p) => p.includeVisualLayouts === false))
+})
