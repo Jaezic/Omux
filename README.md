@@ -105,7 +105,7 @@ Plugin Development. `⌘⌥⇧T` sync now, `⌘⌥⇧N` new window in the focuse
 are read; git roots are cached per folder) and lists Orca's groups, workspaces and tabs; the full
 sync runs only when something changed, and at least every 30 s. tmux hooks (`set-hook -g …[77]`)
 wake the runner the moment windows, panes or sessions come and go, or an agent turns busy or idle
-(its title gains or loses the spinner; matched by tmux, once per change), and a tab check twice a second
+(its title gains or loses the spinner; matched by tmux, once per change), and a tab check four times a second
 catches a "+" in Orca. SSH hosts sync on their own lanes, so a slow host never delays the local one.
 
 ## State
