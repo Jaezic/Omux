@@ -10,3 +10,14 @@ test('idle time is a count of ms on macOS, null elsewhere', async () => {
     assert.equal(ms, null)
   }
 })
+
+test('idle time reads without /usr/sbin on PATH (as under launchd)', async () => {
+  const path = process.env.PATH
+  process.env.PATH = '/usr/bin:/bin'
+  try {
+    const ms = await userIdleMs()
+    assert.equal(ms === null, process.platform !== 'darwin')
+  } finally {
+    process.env.PATH = path
+  }
+})
