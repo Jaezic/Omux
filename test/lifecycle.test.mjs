@@ -679,6 +679,13 @@ test('probe notices a tab opened in Orca between passes', async () => {
   assert.equal(await engine.probe(), true)
 })
 
+test('a slow probe (nobody at the keyboard) still notices a new tab', async () => {
+  await engine.tick()
+  assert.equal(await engine.probe({ slow: true }), false)
+  plusTab(undefined, 'probe-me')
+  assert.equal(await engine.probe({ slow: true }), true)
+})
+
 // --- session names ---------------------------------------------------------------------------
 
 test('renaming a tmux session renames its group (same group, same cards)', async () => {
@@ -902,6 +909,25 @@ test('a host that stops syncing is reported once after 3 minutes, again only aft
   tmux.scan = scan
   await engine.tick()
   assert.equal(engine.health().local.error, null)
+})
+
+test('minutes the Mac slept do not count as a host being stuck', async () => {
+  const notes = []
+  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run, notify: async (title, body) => notes.push(body) })
+  await engine.tick()
+  const scan = tmux.scan
+  tmux.scan = async () => {
+    throw new Error('not yet')
+  }
+  mock.timers.tick(20 * 60_000) // lid closed: no pass for 20 minutes
+  await engine.tick()
+  assert.equal(notes.length, 0, 'no alert right after waking')
+  for (let i = 0; i < 4; i++) {
+    mock.timers.tick(60_000)
+    await engine.tick()
+  }
+  assert.equal(notes.length, 1, 'still stuck 3 minutes after waking: reported')
+  tmux.scan = scan
 })
 
 test('focus hooks are off unless focusSync is set; then each view gets one once', async () => {

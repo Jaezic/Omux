@@ -117,6 +117,12 @@ wake the runner the moment windows, panes or sessions come and go, or an agent t
 (its title gains or loses the spinner; matched by tmux, once per change), and a tab check four times a second
 catches a "+" in Orca. SSH hosts sync on their own lanes, so a slow host never delays the local one.
 
+`idleAfterSec` (default 120, 0 turns it off): after this long with no keyboard or mouse input, the
+tab check runs once a second instead of four times; the first input brings it back. Agent status
+still arrives at once through the tmux hooks.
+
+A host that has not synced for 3 minutes is reported, but time the Mac slept does not count.
+
 ## State
 
 `~/.orca-tmux/` (or `$ORCA_TMUX_HOME`) holds `state.json` (session → group, window → workspace/tab), `config.json`, the
