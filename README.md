@@ -110,6 +110,10 @@ Plugin Development. `⌘⌥⇧T` sync now, `⌘⌥⇧N` new window in the focuse
 
 `hosts`: `"orca"` (connected in Orca), `"ssh-config"` (every `Host` alias), or a list.
 
+`notify`: a macOS notification when an agent finishes a turn ("claude 완료") or starts waiting for
+approval ("claude 승인 필요", with the command it asks about; once per wait). Read from the tmux
+screen, so it comes for SSH hosts and tabs out of sight too.
+
 `intervalSec`: seconds between light checks. A light check scans tmux (only agent panes' screens
 are read; git roots are cached per folder) and lists Orca's groups, workspaces and tabs; the full
 sync runs only when something changed, and at least every 30 s. tmux hooks (`set-hook -g …[77]`)
