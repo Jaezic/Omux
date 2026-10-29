@@ -951,6 +951,35 @@ test('focus hooks are off unless focusSync is set; then each view gets one once'
   }
 })
 
+test('an agent turning to wait for approval is notified once, with what it asks; finishing says done', async () => {
+  const notes = []
+  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run, notify: async (title, body) => notes.push(`${title}: ${body}`) })
+  const pane = tmux.windows[0].panes[0]
+  pane.state = 'waiting'
+  pane.ask = 'rm -rf build'
+  await engine.tick()
+  assert.deepEqual(notes, [], 'already waiting when the runner started: not news')
+  pane.state = 'working'
+  pane.ask = null
+  await engine.tick()
+  pane.state = 'waiting'
+  pane.ask = 'git push'
+  await engine.tick()
+  await engine.tick()
+  assert.equal(notes.length, 1, 'once per wait')
+  assert.match(notes[0], /^claude 승인 필요: .*git push$/)
+  pane.state = 'working' // the same prompt read as working for a moment
+  await engine.tick()
+  pane.state = 'waiting'
+  await engine.tick()
+  assert.equal(notes.length, 1, 'the same wait flickering is not news')
+  pane.state = 'working'
+  await engine.tick()
+  pane.state = 'idle'
+  await engine.tick()
+  assert.match(notes[1], /^claude 완료: /)
+})
+
 test('an agent whose last answer was unknown (empty) is not taken as having finished a turn', async () => {
   const pane = tmux.windows[0].panes[0]
   pane.message = ''
