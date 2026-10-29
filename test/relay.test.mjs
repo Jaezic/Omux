@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { test } from 'node:test'
 import { createRelay, helperScript } from '../lib/relay.mjs'
+import { SCAN_SCRIPT } from '../lib/scan.mjs'
 
 // Orca over a fake host: files live in a Map, and "the helper" answers each command file.
 function fakeOrca({ helperRunning = true } = {}) {
@@ -98,6 +99,21 @@ test('scan starts the helper once when there is no scan yet, then reads it', asy
   assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, 1)
 })
 
+test('a helper that exited while the Mac slept (its scan gone) is started again on the next scan', async () => {
+  const orca = fakeOrca()
+  const relay = createRelay({ rpc: orca.rpc, state: {} })
+  orca.files.set('.orca-tmux/remote/helper.sh', helperScript())
+  orca.files.set('.orca-tmux/remote/scan.sh', `${SCAN_SCRIPT}\n`)
+  orca.files.set('.orca-tmux/remote/scan.out', '__HOME__/home/me\n__SESSIONS__\n__PS__\n__CAP__\n__SUM__1\n__AT__1700000000\n')
+  orca.files.set('.orca-tmux/remote/scan.stamp', '1700000000 1\n')
+  await relay.scan('h')
+  assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, 0, 'a running helper is left alone')
+  orca.files.delete('.orca-tmux/remote/scan.out')
+  orca.files.delete('.orca-tmux/remote/scan.stamp')
+  await assert.rejects(relay.scan('h'), (err) => err.relayStarting === true)
+  assert.equal(orca.calls.filter((m) => m === 'terminal.create').length, 1, 'started at once, not 30s later')
+})
+
 test('the helper runs queued commands and exits once the runner goes quiet', () => {
   const home = execFileSync('mktemp', ['-d']).toString().trim()
   const dir = `${home}/.orca-tmux/remote`
@@ -105,12 +121,13 @@ test('the helper runs queued commands and exits once the runner goes quiet', () 
   // Commands queued once the helper runs (it drops older ones); one pass, then "alive" goes stale.
   const script = helperScript(1)
     .replace('while :; do', `printf 'echo hi\\n#__omux_end__\\n' > "$D/cmd/a.sh"; printf 'echo half' > "$D/cmd/b.sh"\nwhile :; do`)
-    .replace('sleep 0.2', `touch -t 200001010000 "$D/alive"; sleep 0.1`)
+    .replace('sleep 0.2', `cp "$D/scan.out" "$D/scan.seen"; cp "$D/scan.stamp" "$D/stamp.seen"; touch -t 200001010000 "$D/alive"; sleep 0.1`)
   execFileSync('sh', ['-c', script], { env: { ...process.env, HOME: home }, timeout: 10_000 })
-  const out = execFileSync('cat', [`${dir}/cmd/a.out`, `${dir}/scan.out`]).toString()
+  const out = execFileSync('cat', [`${dir}/cmd/a.out`, `${dir}/scan.seen`]).toString()
   assert.match(out, /^hi\n__RC__0\nscanned\n__SUM__\d+\n__AT__\d+\n$/)
-  assert.match(execFileSync('cat', [`${dir}/scan.stamp`]).toString(), /^\d+ \d+\n$/)
+  assert.match(execFileSync('cat', [`${dir}/stamp.seen`]).toString(), /^\d+ \d+\n$/)
   assert.equal(execFileSync('ls', [`${dir}/cmd`]).toString().trim(), 'a.out\nb.sh', 'a half-written command waits')
+  assert.equal(execFileSync('ls', [dir]).toString().match(/^scan\.(out|stamp)$/m), null, 'a helper that exits takes its scan along')
   execFileSync('rm', ['-rf', home])
 })
 
