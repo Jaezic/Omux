@@ -967,6 +967,44 @@ test('starting an agent in a one-pane window keeps the tab being typed in; its s
   assert.deepEqual(tabs().map((t) => t.handle), [shellTab], 'the agent exiting keeps it too')
 })
 
+test('an agent exiting in a one-pane window that has its pane tab keeps that tab', async () => {
+  await settle()
+  const tabs = () => orca.terminals.filter((t) => t.worktreeId === `folder:${orca.workspaces.find((w) => w.folderPath === '/tmp').id}`)
+  const win = tmux.windows[1]
+  const pane = win.panes[0]
+  Object.assign(pane, { agent: 'claude', state: 'idle', title: '✳ hi' })
+  win.panes.push({ ...pane, id: '%99', index: 1, agent: 'codex', title: '✳ codex' })
+  await settle()
+  const paneTab = tabs().find((t) => t.title === 'hi')?.handle
+  assert.ok(paneTab, 'split: one tab per agent')
+  win.panes.pop() // the other pane closed: one pane, with its pane tab
+  await settle()
+  assert.deepEqual(tabs().map((t) => t.handle), [paneTab])
+  Object.assign(pane, { agent: null, state: null, title: 'zsh' })
+  await settle()
+  assert.deepEqual(tabs().map((t) => t.handle), [paneTab], 'the agent exiting keeps the tab')
+})
+
+test('an agent that did work and exited leaves its card in done, then later like an idle agent', async () => {
+  await settle()
+  const pane = tmux.windows[1].panes[0]
+  const card = () => orca.workspaces.find((w) => w.folderPath === '/tmp')
+  Object.assign(pane, { agent: 'claude', state: 'working', title: '⠋ fix it' })
+  await settle()
+  Object.assign(pane, { state: 'idle', title: '✳ fix it', message: 'Fixed.' })
+  await settle()
+  assert.equal(card().workspaceStatus, 'completed')
+  Object.assign(pane, { agent: null, state: null, title: 'zsh', message: null })
+  await settle()
+  assert.equal(card().workspaceStatus, 'completed', 'exiting does not send it back to todo')
+  Object.assign(pane, { agent: 'claude', state: 'idle', title: '✳ Claude Code' })
+  await settle()
+  assert.equal(card().workspaceStatus, 'completed', 'nor does starting a fresh agent there')
+  mock.timers.tick(2 * 3600_000)
+  await settle()
+  assert.equal(card().workspaceStatus, 'todo', 'an hour on: later')
+})
+
 test('an agent just started (nothing done yet) leaves its card in todo; a finished turn moves it to done', async () => {
   await settle()
   const pane = tmux.windows[1].panes[0]
