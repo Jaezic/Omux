@@ -951,6 +951,37 @@ test('focus hooks are off unless focusSync is set; then each view gets one once'
   }
 })
 
+test('starting an agent in a one-pane window keeps the tab being typed in; its status goes there', async () => {
+  await settle()
+  const tabs = () => orca.terminals.filter((t) => t.worktreeId === `folder:${orca.workspaces.find((w) => w.folderPath === '/tmp').id}`)
+  assert.equal(tabs().length, 1, 'the shell window has its window tab')
+  const shellTab = tabs()[0].handle
+  const pane = tmux.windows[1].panes[0]
+  Object.assign(pane, { agent: 'claude', state: 'idle', title: '✳ hi' })
+  tmux.commands = []
+  await settle()
+  assert.deepEqual(tabs().map((t) => t.handle), [shellTab], 'the same tab, and no pane tab beside it')
+  assert.ok(tmux.commands.some((c) => c.includes(']9999;') && c.includes('"agentType":"claude"') && /> \/dev\/ttys0(\D|$)/.test(c)), 'status written to the window tab')
+  Object.assign(pane, { agent: null, state: null, title: 'zsh' })
+  await settle()
+  assert.deepEqual(tabs().map((t) => t.handle), [shellTab], 'the agent exiting keeps it too')
+})
+
+test('an agent just started (nothing done yet) leaves its card in todo; a finished turn moves it to done', async () => {
+  await settle()
+  const pane = tmux.windows[1].panes[0]
+  const card = () => orca.workspaces.find((w) => w.folderPath === '/tmp')
+  Object.assign(pane, { agent: 'claude', state: 'idle', title: '✳ Claude Code' })
+  await settle()
+  assert.equal(card().workspaceStatus, 'todo')
+  Object.assign(pane, { state: 'working', title: '⠋ fix it' })
+  await settle()
+  assert.equal(card().workspaceStatus, 'in-progress')
+  Object.assign(pane, { state: 'idle', title: '✳ fix it', message: 'Fixed.' })
+  await settle()
+  assert.equal(card().workspaceStatus, 'completed')
+})
+
 test('an agent turning to wait for approval is notified once, with what it asks; finishing says done', async () => {
   const notes = []
   engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run, notify: async (title, body) => notes.push(`${title}: ${body}`) })
