@@ -985,6 +985,22 @@ test('an agent exiting in a one-pane window that has its pane tab keeps that tab
   assert.deepEqual(tabs().map((t) => t.handle), [paneTab], 'the agent exiting keeps the tab')
 })
 
+test('a split window with an agent gives its shell pane a tab too, and keeps both when the agent exits', async () => {
+  await settle()
+  const tabs = () => orca.terminals.filter((t) => t.worktreeId === `folder:${orca.workspaces.find((w) => w.folderPath === '/tmp').id}`)
+  const win = tmux.windows[1]
+  const pane = win.panes[0]
+  win.panes.push({ ...pane, id: '%98', index: 1, agent: null, state: null, path: '/tmp/web', title: 'zsh' })
+  Object.assign(pane, { agent: 'claude', state: 'idle', title: '✳ hi' })
+  await settle()
+  const before = tabs().map((t) => [t.handle, t.title]).sort()
+  assert.equal(before.length, 2, 'one tab per pane')
+  assert.ok(before.some(([, title]) => title === 'web'), 'the shell tab is named after its folder')
+  Object.assign(pane, { agent: null, state: null, title: 'zsh' })
+  await settle()
+  assert.deepEqual(tabs().map((t) => t.handle).sort(), before.map(([h]) => h), 'the agent exiting swaps nothing')
+})
+
 test('an agent that did work and exited leaves its card in done, then later like an idle agent', async () => {
   await settle()
   const pane = tmux.windows[1].panes[0]
