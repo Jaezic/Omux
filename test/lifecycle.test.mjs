@@ -969,20 +969,32 @@ test('starting an agent in a one-pane window keeps the tab being typed in; its s
 
 test('an agent exiting in a one-pane window that has its pane tab keeps that tab', async () => {
   await settle()
+  const win = tmux.windows[0] // claude and codex, each with its pane tab
+  const claudeTab = handleOf('claude')
+  const codexPane = win.panes.pop() // codex's pane closed: one pane, with its pane tab
+  await settle()
+  assert.ok(orca.terminals.some((t) => t.handle === claudeTab), 'kept')
+  Object.assign(win.panes[0], { agent: null, state: null, title: 'zsh' })
+  await settle()
+  assert.ok(orca.terminals.some((t) => t.handle === claudeTab), 'the agent exiting keeps the tab')
+  win.panes.push(codexPane)
+})
+
+test('splitting a window while its window tab is open keeps that tab; only the new pane gets a tab', async () => {
+  await settle()
   const tabs = () => orca.terminals.filter((t) => t.worktreeId === `folder:${orca.workspaces.find((w) => w.folderPath === '/tmp').id}`)
   const win = tmux.windows[1]
   const pane = win.panes[0]
   Object.assign(pane, { agent: 'claude', state: 'idle', title: '✳ hi' })
-  win.panes.push({ ...pane, id: '%99', index: 1, agent: 'codex', title: '✳ codex' })
   await settle()
-  const paneTab = tabs().find((t) => t.title === 'hi')?.handle
-  assert.ok(paneTab, 'split: one tab per agent')
-  win.panes.pop() // the other pane closed: one pane, with its pane tab
+  const [windowTab] = tabs().map((t) => t.handle)
+  tmux.commands = []
+  win.panes.push({ ...pane, id: '%97', index: 1, agent: null, state: null, path: '/tmp/web', title: 'zsh' }) // prefix + "
   await settle()
-  assert.deepEqual(tabs().map((t) => t.handle), [paneTab])
-  Object.assign(pane, { agent: null, state: null, title: 'zsh' })
-  await settle()
-  assert.deepEqual(tabs().map((t) => t.handle), [paneTab], 'the agent exiting keeps the tab')
+  assert.equal(tabs().length, 2)
+  assert.ok(tabs().some((t) => t.handle === windowTab), 'the tab being typed in stays')
+  assert.ok(tabs().some((t) => t.title === 'web'), 'the new pane has its own tab')
+  assert.ok(!tmux.commands.some((c) => c.includes(']9999;') && !/> \/dev\/ttys0(\D|$)/.test(c) && c.includes('"agentType":"claude"')), "claude's status stays on the window tab")
 })
 
 test('a split window with an agent gives its shell pane a tab too, and keeps both when the agent exits', async () => {
