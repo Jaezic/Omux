@@ -468,6 +468,31 @@ test('a nested card the user removed is not added back', async () => {
   assert.deepEqual(tmux.kills(), [], 'removing a nested card never touches tmux')
 })
 
+test('a removed nested card is remembered in the state file, so a restart does not add it back', async () => {
+  withLane()
+  tmux.nested = ['/repo\t/repo/va-vault']
+  mock.timers.tick(61_000)
+  await settle()
+  orca.repos = orca.repos.filter((r) => r.path !== '/repo/va-vault')
+  mock.timers.tick(61_000)
+  await settle()
+  const saved = JSON.parse(readFileSync(join(process.env.ORCA_TMUX_HOME, 'state.json'), 'utf8'))
+  assert.deepEqual(saved.nestedDismissed, ['local//repo/va-vault'])
+})
+
+test('a nested card deleted in Orca but left archived is removed and not added back', async () => {
+  withLane()
+  tmux.nested = ['/repo\t/repo/va-vault']
+  mock.timers.tick(61_000)
+  await settle()
+  const repo = nestedCard()
+  orca.meta.set(`${repo.id}::/repo/va-vault`, { ...orca.meta.get(`${repo.id}::/repo/va-vault`), isArchived: true })
+  mock.timers.tick(61_000)
+  await settle()
+  await settle()
+  assert.equal(nestedCard(), undefined)
+})
+
 // --- creating from Orca ----------------------------------------------------------------------
 
 test('a group added in Orca as "local · <name>" becomes a tmux session, kept as its group', async () => {
