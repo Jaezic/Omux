@@ -59,6 +59,14 @@ Mirror tmux into Orca's sidebar instead of using Orca worktrees.
   card is only hidden. A hidden card stays hidden across restarts until the window closes or
   "tmux: Reopen Closed Windows".
 - **Detach / ssh drop** reopens the tab; the window is kept.
+- **Reboot**: local tmux is saved every 30s (`~/.orca-tmux/snapshot.json`: sessions, windows,
+  layouts, pane folders, each agent's conversation). After a reboot the runner rebuilds it before
+  its first pass, so windows keep their cards, lanes and tabs. Shells open in their folders (programs
+  that ran in them are not restarted); agent panes get `claude --resume <id>` / `codex resume <id>`
+  typed, not run (`"restoreAgents": "run"` presses enter too, `false` types nothing;
+  `"restore": false` turns it off). Nothing is restored when tmux already has sessions.
+- **Lanes come back**: a card whose window goes away and comes back at the same session and window
+  index within a week returns to the lane it was in (also one moved there by hand).
 - **Hosts**: local plus SSH hosts connected in Orca (`"hosts": "orca"`) that have an orcad server.
   They are reached over Orca's own connection, never a second SSH login: orcad can read and write
   files there, so a small helper (`~/.orca-tmux/remote`, in a tmux session `omux-relay`) scans tmux

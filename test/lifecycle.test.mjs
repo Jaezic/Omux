@@ -1133,3 +1133,42 @@ test('terminal listings leave out the visual layouts (a third of the payload, un
   assert.ok(params.length > 1)
   assert.ok(params.every((p) => p.includeVisualLayouts === false))
 })
+
+test('a card moved by hand gets its lane back when its window returns after tmux restarts', async () => {
+  await settle()
+  const card = () => orca.workspaces.find((w) => w.folderPath === '/tmp')
+  card().workspaceStatus = 'in-review' // moved by hand
+  mock.timers.tick(31_000) // seen by the next full pass
+  await settle()
+  assert.equal(card().workspaceStatus, 'in-review')
+  const before = structuredClone(tmux.windows)
+  tmux.windows = [] // tmux server gone (reboot)
+  await settle()
+  await settle()
+  assert.equal(card(), undefined, 'its card went with the window')
+  tmux.windows = before.map((w, i) => ({ ...w, id: `@${11 + i}`, panes: w.panes.map((p, j) => ({ ...p, id: `%${11 + i * 2 + j}` })) }))
+  await settle()
+  await settle()
+  assert.equal(card().workspaceStatus, 'in-review', 'not back in todo')
+})
+
+test('windows rebuilt after a reboot keep their cards, lanes and tabs when their new ids are given', async () => {
+  await settle()
+  const card = () => orca.workspaces.find((w) => w.folderPath === '/tmp')
+  card().workspaceStatus = 'in-review'
+  mock.timers.tick(31_000)
+  await settle()
+  const cardsBefore = orca.workspaces.map((w) => w.id).sort()
+  const tabsBefore = orca.terminals.map((t) => t.handle).sort()
+  const ids = { '@1': '@11', '%1': '%11', '%2': '%12', '@2': '@12', '%3': '%13' }
+  tmux.windows = tmux.windows.map((w) => ({ ...w, id: ids[w.id], panes: w.panes.map((p) => ({ ...p, id: ids[p.id] })) }))
+  orca.views = new Map([...orca.views].map(([v, x]) => [v.replace(/\d+$/, (n) => String(Number(n) + 10)), x]))
+  engine = createSyncEngine({ cli: orca.cli, bridge: orca.bridge, env: {}, scan: (...args) => tmux.scan(...args), runTmux: tmux.run })
+  engine.remapLocal(ids)
+  await settle()
+  await settle()
+  assert.deepEqual(orca.workspaces.map((w) => w.id).sort(), cardsBefore, 'same cards')
+  assert.equal(card().workspaceStatus, 'in-review')
+  assert.deepEqual(orca.terminals.map((t) => t.handle).sort(), tabsBefore, 'same tabs')
+  assert.deepEqual(tmux.kills(), [])
+})
